@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Agora Agent & Token Service v2
+Agora Agent & Token Service
 
-简化版本，所有核心逻辑集中在 src/service.py
+Simplified version with core logic in src/server.py and src/agent.py
 """

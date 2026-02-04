@@ -4,8 +4,6 @@ Agent
 High-level API for managing Agora Conversational AI Agents.
 """
 import os
-import random
-import time
 from typing import Dict, Any
 from agora_rest.agent import AgentClient, DeepgramASRConfig, OpenAILLMConfig, ElevenLabsTTSConfig
 
@@ -14,7 +12,6 @@ class Agent:
     High-level wrapper for Agora Conversational AI Agent operations.
     
     Provides methods to:
-    - Generate connection configuration (tokens, UIDs, channel names)
     - Start agents with ASR, LLM, and TTS configuration
     - Stop running agents
     
@@ -27,36 +24,6 @@ class Agent:
         api_key = os.getenv("API_KEY")
         api_secret = os.getenv("API_SECRET")
         self.client = AgentClient(app_id, app_certificate, api_key, api_secret)
-    
-    def generate_config(self) -> Dict[str, Any]:
-        """
-        Generate connection configuration with token, channel, and UIDs.
-        
-        Returns:
-            Dict containing:
-                - app_id: Agora App ID
-                - token: RTC token for authentication
-                - uid: Generated user UID
-                - channel_name: Generated channel name (timestamp-based)
-                - agent_uid: Generated agent UID
-        """
-        # Generate random UIDs
-        user_uid = random.randint(1000, 9999999)
-        agent_uid = random.randint(10000000, 99999999)
-        
-        # Generate channel name
-        channel_name = f"channel_{int(time.time())}"
-        
-        # Generate token for user (SDK expects string UID)
-        token = self.client.generate_agent_token(channel_name, str(user_uid))
-        
-        return {
-            "app_id": os.getenv("APP_ID"),
-            "token": token,
-            "uid": str(user_uid),
-            "channel_name": channel_name,
-            "agent_uid": str(agent_uid)
-        }
     
     def start(
         self,

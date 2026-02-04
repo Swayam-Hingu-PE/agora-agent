@@ -71,14 +71,6 @@ curl -X POST http://localhost:8000/v2/stopAgent \
   -d '{"agentId": "your_agent_id"}'
 ```
 
-## Alternative: Development Mode with Auto-Reload
-
-For development with automatic reload on code changes:
-
-```bash
-uvicorn src.server:app --host 0.0.0.0 --port 8000 --reload
-```
-
 ## API Endpoints
 
 - `GET /get_config` - Generate connection configuration
