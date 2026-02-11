@@ -71,9 +71,9 @@ class Agent:
             channel_name=channel_name,
             agent_uid=agent_uid,
             user_uid=user_uid,
-            asr_config=asr.to_dict(),
-            llm_config=llm.to_dict(),
-            tts_config=tts.to_dict()
+            asr_config=asr,
+            llm_config=llm,
+            tts_config=tts
         )
     
     def stop(self, agent_id: str) -> None:
