@@ -128,7 +128,7 @@ bun run build
 - Never commit `.env.local` or credentials
 - Frontend uses Next.js dev server (port 3000)
 - Backend uses uvicorn (port 8000)
-- API requests are proxied from `/api/*` to backend via Next.js rewrites
+- API requests are proxied from `/api/*` to backend via `proxy.ts` (Next.js 16 convention)
 - All Agora SDK calls go through `agora-service.ts`
 - State updates trigger React re-renders automatically
 - Agent lifecycle is managed by backend, not frontend
