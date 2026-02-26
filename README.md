@@ -19,7 +19,7 @@ bun run dev
 ```
 
 Services will be available at:
-- **Frontend**: http://localhost:5173
+- **Frontend**: http://localhost:3000
 - **Backend**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
 
