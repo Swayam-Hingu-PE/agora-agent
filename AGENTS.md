@@ -87,6 +87,22 @@ A real-time voice conversation application with AI agents, built with:
 - **Agent logic**: Update `src/agent.py`
 - **Configuration**: Modify `.env.local` (never commit this file)
 
+### Local agora-agent-rest Usage
+
+- Package location: `server-python/agora-agent-rest` (do not modify this directory)
+- Client entry: `from agoraio import Agora`
+- Auth: `Agora(username="YOUR_USERNAME", password="YOUR_PASSWORD")`
+- Start agent: `client.agents.start(appid, name, properties=StartAgentsRequestProperties(...))`
+- List agents: `client.agents.list(appid=..., channel=..., state=..., limit=..., cursor=...)`
+- Get agent: `client.agents.get(appid=..., agent_id=...)`
+- Get history: `client.agents.get_history(appid=..., agent_id=...)`
+
+### Backend Replacement Plan (server-python/src only)
+
+- Replace `agora_rest.agent` usage with local `agora-agent-rest` SDK usage in `src/agent.py`
+- Replace token generation in `src/server.py` with local `src/agora_token_builder`
+- Keep request/response shapes for `/get_config`, `/v2/startAgent`, `/v2/stopAgent` unchanged
+
 ### Testing Changes
 
 ```bash

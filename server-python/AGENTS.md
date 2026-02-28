@@ -9,17 +9,19 @@ This document is designed for AI programming assistants to understand and work w
 **Tech Stack:**
 - Python 3.8+
 - FastAPI (web framework)
-- agora-rest-client-python (Agora SDK)
+- agora-agent-rest (Local Agora SDK)
 - uvicorn (ASGI server)
 
 **Architecture:**
 ```
-HTTP Request → FastAPI (server.py) → Agent (agent.py) → AgentManager (SDK) → Agora API
+HTTP Request → FastAPI (server.py) → Agent (agent.py) → Agora Agent REST (Local SDK) → Agora API
 ```
 
 **Key Components:**
 - `src/server.py` - HTTP endpoints and request handling
-- `src/agent.py` - Business logic wrapper around SDK
+- `src/agent.py` - Business logic wrapper around local SDK
+- `src/agora_token_builder/` - Token generation logic
+- `agora-agent-rest/` - Local Python client for Agora Agents
 - SDK handles token generation, API calls, and configuration
 
 ## Build and Test Commands
@@ -30,7 +32,7 @@ HTTP Request → FastAPI (server.py) → Agent (agent.py) → AgentManager (SDK)
 cp .env.example .env.local
 # Edit .env.local with actual API keys
 
-# Install dependencies
+# Install dependencies (includes local agora-agent-rest)
 pip install -r requirements.txt
 ```
 
@@ -163,12 +165,14 @@ def start_agent(channel: str, uid: str) -> dict:
 python-agent/
 ├── src/
 │   ├── server.py          # FastAPI app, HTTP endpoints
-│   └── agent.py           # Business logic wrapper
+│   ├── agent.py           # Business logic wrapper
+│   └── agora_token_builder/ # Token generation utils
+├── agora-agent-rest/      # Local SDK source code
 ├── .env.example           # Environment template (safe to commit)
-├── .env.local            # Actual secrets (never commit)
+├── .env.local             # Actual secrets (never commit)
 ├── requirements.txt       # Python dependencies
-├── README.md             # User documentation
-└── AGENTS.md             # This file (AI assistant guide)
+├── README.md              # User documentation
+└── AGENTS.md              # This file (AI assistant guide)
 ```
 
 ## Common Patterns
@@ -196,12 +200,18 @@ except RuntimeError as e:
 # Load from environment
 config = AgentConfig.from_env()
 
-# Build service configs
-asr = ASRConfig()
-asr.api_key = config.deepgram_api_key
+# Build service configs using agoraio types
+asr = StartAgentsRequestPropertiesAsr(
+    vendor="deepgram",
+    language="en-US",
+    params={"key": config.deepgram_api_key}
+)
 
-llm = LLMConfig()
-llm.api_key = config.llm_api_key
+llm = StartAgentsRequestPropertiesLlm(
+    vendor="openai",
+    api_key=config.llm_api_key,
+    url="https://api.openai.com/v1/chat/completions"
+)
 ```
 
 ## Dependencies
@@ -209,7 +219,7 @@ llm.api_key = config.llm_api_key
 ### Core
 - `fastapi>=0.100.0` - Web framework
 - `uvicorn>=0.20.0` - ASGI server
-- `agora-rest-client-python>=0.1.0` - Agora SDK
+- `agora-agent-rest` - Local Agora SDK
 - `python-dotenv>=1.0.0` - Environment management
 
 ### Update Strategy
@@ -220,8 +230,8 @@ llm.api_key = config.llm_api_key
 ## Troubleshooting
 
 ### Import Errors
-**Symptom:** `ModuleNotFoundError: No module named 'agora_rest'`
-**Solution:** `pip install agora-rest-client-python`
+**Symptom:** `ModuleNotFoundError: No module named 'agoraio'`
+**Solution:** Ensure `agora-agent-rest` is in `PYTHONPATH` or `sys.path` (handled in `agent.py`)
 
 ### Configuration Errors
 **Symptom:** Service fails to start with ValueError

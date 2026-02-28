@@ -16,7 +16,7 @@ Python FastAPI service providing REST APIs for Agora Conversational AI Agent man
 | Framework | FastAPI |
 | Language | Python 3.8+ |
 | HTTP Server | Uvicorn |
-| SDK | agora-rest-client-python |
+| SDK | agora-agent-rest (Local) |
 | Config | python-dotenv |
 
 ## Project Structure
@@ -25,7 +25,9 @@ Python FastAPI service providing REST APIs for Agora Conversational AI Agent man
 server-python/
 ├── src/
 │   ├── server.py           # FastAPI app, routes, CORS
-│   └── agent.py            # Agent lifecycle management
+│   ├── agent.py            # Agent lifecycle management
+│   └── agora_token_builder/ # Token generation utils
+├── agora-agent-rest/       # Local SDK source code
 ├── .env.example            # Environment template
 └── requirements.txt        # Python dependencies
 ```
@@ -65,8 +67,8 @@ agent = Agent()
 ### 2. agent.py - Agent Management Layer
 
 **Responsibilities**:
-- Wrap Agora REST SDK client
-- Configure ASR/LLM/TTS providers
+- Wrap Agora Agent REST SDK (local version)
+- Configure ASR/LLM/TTS providers using `agoraio` models
 - Manage agent lifecycle (start/stop)
 - Parameter validation
 
@@ -75,21 +77,17 @@ agent = Agent()
 ```python
 class Agent:
     def __init__(self):
-        # Initialize AgentClient with credentials
-        self.client = AgentClient(app_id, app_certificate, api_key, api_secret)
+        # Initialize Agora client with credentials
+        self.client = Agora(area=area, username=api_key, password=api_secret)
     
     def start(channel_name, agent_uid, user_uid):
-        # Configure three-tier AI services
-        asr = DeepgramASRConfig(api_key)
-        llm = OpenAILLMConfig(api_key)
-        tts = ElevenLabsTTSConfig(api_key)
+        # Configure three-tier AI services using agoraio types
+        asr = StartAgentsRequestPropertiesAsr(vendor="deepgram", ...)
+        llm = StartAgentsRequestPropertiesLlm(vendor="openai", ...)
+        tts = Tts_Elevenlabs(...)
         
-        # Start agent via REST API
-        return self.client.start_agent(...)
-    
-    def stop(agent_id):
-        # Stop agent via REST API
-        self.client.stop_agent(agent_id)
+        # Start agent via SDK
+        return self.client.agents.start(...)
 ```
 
 ## API Endpoints
@@ -203,15 +201,17 @@ PORT=8000                             # HTTP server port
 
 ### Token Generation
 
-Uses `agora_rest.agent.TokenBuilder`:
+Uses `agora_token_builder.RtcTokenBuilder`:
 
 ```python
-token = TokenBuilder.generate(
+token = RtcTokenBuilder.build_token_with_rtm(
     app_id=app_id,
     app_certificate=app_certificate,
     channel_name=channel_name,
-    uid=str(user_uid),
-    expire=86400  # 24 hours
+    account=str(user_uid),
+    role=Role_Publisher,
+    token_expire=86400,
+    privilege_expire=86400
 )
 ```
 
