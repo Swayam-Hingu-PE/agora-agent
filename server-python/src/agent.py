@@ -27,14 +27,14 @@ class Agent:
         api_key = os.getenv("API_KEY")
         api_secret = os.getenv("API_SECRET")
         
-        area_str = os.getenv("AGORA_AREA", "US")
+        area_str = os.getenv("AGORA_AREA", "CN")
         if area_str == "CN":
             area = Area.CN
         else:
             try:
                 area = Area[area_str]
             except KeyError:
-                area = Area.US
+                area = Area.CN
             
         self.client = Agora(area=area, username=api_key, password=api_secret)
         self.client.app_id = self.app_id
@@ -68,7 +68,13 @@ class Agent:
             name=name,
             instructions="You are a helpful AI assistant.",
             greeting="Hello! I am your AI assistant. How can I help you?",
-            failure_message="I'm sorry, I'm having trouble processing your request."
+            failure_message="I'm sorry, I'm having trouble processing your request.",
+            advanced_features={
+                "enable_rtm": True
+            },
+            parameters={
+                "data_channel": "rtm"
+            }
         )
         
         agora_agent = (

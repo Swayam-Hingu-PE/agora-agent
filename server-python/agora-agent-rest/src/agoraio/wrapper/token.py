@@ -90,9 +90,7 @@ def generate_rtc_token(
     role: int = ROLE_PUBLISHER,
     expiry_seconds: int = DEFAULT_EXPIRY_SECONDS,
 ) -> str:
-    """Build a short-lived RTC token.
-
-    Both token_expire and privilege_expire are set to the same value.
+    """Build a token with RTC, RTM, and Chat privileges.
 
     Parameters
     ----------
@@ -112,26 +110,32 @@ def generate_rtc_token(
     Returns
     -------
     str
-        The generated RTC token.
+        The generated token with RTC+RTM+Chat privileges.
     """
-    try:
-        from agora_token_builder import RtcTokenBuilder  # type: ignore[import-not-found]
+    from ..utils.AccessToken2 import AccessToken, ServiceRtc, ServiceRtm, ServiceChat
 
-        privilege_expire_ts = int(time.time()) + expiry_seconds
-        return RtcTokenBuilder.buildTokenWithUid(
-            app_id,
-            app_certificate,
-            channel,
-            uid,
-            role,
-            privilege_expire_ts,
-        )
-    except ImportError:
-        privilege_expire_ts = int(time.time()) + expiry_seconds
-        return _generate_dynamic_key(
-            app_id,
-            app_certificate,
-            channel,
-            uid,
-            privilege_expire_ts,
-        )
+    expire = expiry_seconds
+    uid_str = str(uid)
+
+    # Create RTC service
+    rtc_service = ServiceRtc(channel, uid)
+    rtc_service.add_privilege(ServiceRtc.kPrivilegeJoinChannel, expire)
+    rtc_service.add_privilege(ServiceRtc.kPrivilegePublishAudioStream, expire)
+    rtc_service.add_privilege(ServiceRtc.kPrivilegePublishVideoStream, expire)
+    rtc_service.add_privilege(ServiceRtc.kPrivilegePublishDataStream, expire)
+
+    # Create RTM service
+    rtm_service = ServiceRtm(uid_str)
+    rtm_service.add_privilege(ServiceRtm.kPrivilegeLogin, expire)
+
+    # Create Chat service
+    chat_service = ServiceChat(uid_str)
+    chat_service.add_privilege(ServiceChat.kPrivilegeUser, expire)
+
+    # Create token and add all services
+    token = AccessToken(app_id=app_id, app_certificate=app_certificate, expire=expire)
+    token.add_service(rtc_service)
+    token.add_service(rtm_service)
+    token.add_service(chat_service)
+
+    return token.build()
