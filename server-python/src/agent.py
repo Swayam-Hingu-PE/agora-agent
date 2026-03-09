@@ -33,10 +33,9 @@ class Agent:
         token = generate_access_token(
             app_id=self.app_id,
             app_certificate=self.app_certificate,
-            expiry_seconds=86400  # 24 hours
+            expiry_seconds=86400 
         )
         
-        # Pass token via Authorization header
         headers = {
             "Authorization": f"agora token={token}"
         }
