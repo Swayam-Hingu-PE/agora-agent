@@ -184,8 +184,6 @@ Backend reads configuration from `server-python/.env.local`:
 |----------|-------------|
 | APP_ID | Agora App ID |
 | APP_CERTIFICATE | Agora App Certificate |
-| API_KEY | Agora RESTful API Key (Customer ID) |
-| API_SECRET | Agora RESTful API Secret (Customer Secret) |
 | ASR_DEEPGRAM_API_KEY | Deepgram ASR API Key |
 | LLM_API_KEY | OpenAI LLM API Key |
 | TTS_ELEVENLABS_API_KEY | ElevenLabs TTS API Key |

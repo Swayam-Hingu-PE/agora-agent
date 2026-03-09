@@ -143,11 +143,10 @@ def start_agent(channel: str, uid: str) -> dict:
 - All secrets must be loaded from environment
 
 ### API Keys Required
-- `APP_ID`, `APP_CERTIFICATE` - Agora credentials
-- `API_KEY`, `API_SECRET` - Agora REST API auth
-- `LLM_API_KEY` - OpenAI API key
-- `TTS_ELEVENLABS_API_KEY` - ElevenLabs API key
-- `ASR_DEEPGRAM_API_KEY` - Deepgram API key
+- `APP_ID`, `APP_CERTIFICATE` - Agora credentials (required)
+- `LLM_API_KEY` - OpenAI API key (required)
+- `TTS_ELEVENLABS_API_KEY` - ElevenLabs API key (required)
+- `ASR_DEEPGRAM_API_KEY` - Deepgram API key (required)
 
 ### Input Validation
 - All user inputs are validated before processing

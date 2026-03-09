@@ -77,17 +77,30 @@ agent = Agent()
 ```python
 class Agent:
     def __init__(self):
-        # Initialize Agora client with credentials
-        self.client = Agora(area=area, username=api_key, password=api_secret)
+        # Generate Token007 for API authentication
+        token = generate_access_token(
+            app_id=self.app_id,
+            app_certificate=self.app_certificate,
+            expiry_seconds=86400
+        )
+        
+        # Pass token via Authorization header
+        headers = {"Authorization": f"agora token={token}"}
+        self.client = Agora(area=Area.CN, username="", password="", headers=headers)
     
     def start(channel_name, agent_uid, user_uid):
-        # Configure three-tier AI services using agoraio types
-        asr = StartAgentsRequestPropertiesAsr(vendor="deepgram", ...)
-        llm = StartAgentsRequestPropertiesLlm(vendor="openai", ...)
-        tts = Tts_Elevenlabs(...)
+        # Configure agent using AgoraAgent wrapper
+        agora_agent = AgoraAgent(...)
+        agora_agent = (
+            agora_agent
+            .with_llm(OpenAI(...))
+            .with_tts(ElevenLabsTTS(...))
+            .with_stt(DeepgramSTT(...))
+        )
         
         # Start agent via SDK
-        return self.client.agents.start(...)
+        session = agora_agent.create_session(...)
+        return session.start()
 ```
 
 ## API Endpoints
@@ -183,8 +196,6 @@ Loaded from `.env.local` (priority) or `.env`:
 ```bash
 APP_ID=your_app_id                    # Agora App ID
 APP_CERTIFICATE=your_app_certificate  # Agora App Certificate
-API_KEY=your_api_key                  # Agora REST API Key
-API_SECRET=your_api_secret            # Agora REST API Secret
 ```
 
 **AI Service Providers**:
@@ -198,6 +209,8 @@ TTS_ELEVENLABS_API_KEY=your_key      # Text-to-Speech
 ```bash
 PORT=8000                             # HTTP server port
 ```
+
+**Note**: The service uses Token007 authentication generated from `APP_ID` and `APP_CERTIFICATE`. No API_KEY/API_SECRET needed.
 
 ### Token Generation
 

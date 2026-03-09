@@ -139,3 +139,42 @@ def generate_rtc_token(
     token.add_service(chat_service)
 
     return token.build()
+
+
+def generate_access_token(
+    app_id: str,
+    app_certificate: str,
+    expiry_seconds: int = DEFAULT_EXPIRY_SECONDS,
+) -> str:
+    """Generate Token007 for Agora Agent REST API authentication.
+    
+    This token is used in the Authorization header as:
+    Authorization: agora token=<token>
+    
+    Parameters
+    ----------
+    app_id : str
+        Agora App ID.
+    app_certificate : str
+        Agora App Certificate.
+    expiry_seconds : int
+        Token expiry in seconds (default 3600).
+    
+    Returns
+    -------
+    str
+        The generated Token007 for API authentication.
+    """
+    from ..utils.AccessToken2 import AccessToken, ServiceRtc
+    
+    # For API-level authentication, we create a token with minimal RTC service
+    # The actual channel and uid will be validated by the backend
+    token = AccessToken(app_id=app_id, app_certificate=app_certificate, expire=expiry_seconds)
+    
+    # Add a minimal RTC service to pass validation
+    # Using empty channel and uid=0 for API-level auth
+    rtc_service = ServiceRtc("", 0)
+    rtc_service.add_privilege(ServiceRtc.kPrivilegeJoinChannel, expiry_seconds)
+    token.add_service(rtc_service)
+    
+    return token.build()

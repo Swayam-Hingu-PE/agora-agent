@@ -30,7 +30,9 @@ class BaseClientWrapper:
             "X-Fern-SDK-Version": "1.0.0",
             **(self.get_custom_headers() or {}),
         }
-        headers["Authorization"] = httpx.BasicAuth(self._get_username(), self._get_password())._auth_header
+        # Only set Authorization if not already provided in custom headers
+        if "Authorization" not in headers:
+            headers["Authorization"] = httpx.BasicAuth(self._get_username(), self._get_password())._auth_header
         return headers
 
     def _get_username(self) -> str:

@@ -9,6 +9,7 @@ from typing import Any, Dict
 from agoraio import Agora, Area
 from agoraio.wrapper import Agent as AgoraAgent
 from agoraio.wrapper.vendors import OpenAI, ElevenLabsTTS, DeepgramSTT
+from agoraio.wrapper.token import generate_access_token
 
 class Agent:
     """
@@ -24,19 +25,24 @@ class Agent:
     def __init__(self):
         self.app_id = os.getenv("APP_ID")
         self.app_certificate = os.getenv("APP_CERTIFICATE")
-        api_key = os.getenv("API_KEY")
-        api_secret = os.getenv("API_SECRET")
         
-        area_str = os.getenv("AGORA_AREA", "CN")
-        if area_str == "CN":
-            area = Area.CN
-        else:
-            try:
-                area = Area[area_str]
-            except KeyError:
-                area = Area.CN
-            
-        self.client = Agora(area=area, username=api_key, password=api_secret)
+        if not self.app_id or not self.app_certificate:
+            raise ValueError("APP_ID and APP_CERTIFICATE are required")
+        
+        # Generate Token007 for API authentication
+        token = generate_access_token(
+            app_id=self.app_id,
+            app_certificate=self.app_certificate,
+            expiry_seconds=86400  # 24 hours
+        )
+        
+        # Pass token via Authorization header
+        headers = {
+            "Authorization": f"agora token={token}"
+        }
+        
+        # Use dummy credentials since we're using header-based auth
+        self.client = Agora(area=Area.CN, username="", password="", headers=headers)
         self.client.app_id = self.app_id
         self.client.app_certificate = self.app_certificate
     
