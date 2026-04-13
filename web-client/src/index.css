@@ -3,49 +3,79 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --accent: #3b82f6;
-  --success: #22c55e;
-  --error: #ef4444;
-  --warning: #f59e0b;
+  color-scheme: dark;
+  --background: 222 28% 8%;
+  --foreground: 210 20% 94%;
+  --card: 222 24% 11%;
+  --card-foreground: 210 20% 94%;
+  --popover: 222 24% 11%;
+  --popover-foreground: 210 20% 94%;
+  --muted: 222 18% 15%;
+  --muted-foreground: 215 14% 63%;
+  --primary: 194 93% 48%;
+  --primary-foreground: 222 28% 8%;
+  --secondary: 222 17% 17%;
+  --secondary-foreground: 210 20% 94%;
+  --accent: 194 93% 48%;
+  --accent-foreground: 222 28% 8%;
+  --destructive: 0 70% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 217 18% 22%;
+  --input: 217 18% 22%;
+  --ring: 194 93% 48%;
+  --surface-subtle: 222 20% 10%;
+  --font-sans: "Instrument Sans", "Inter", system-ui, sans-serif;
+  --font-mono: "Space Mono", "SFMono-Regular", ui-monospace, monospace;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
   min-height: 100vh;
+  font-family: var(--font-sans);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
-#root {
-  min-height: 100vh;
-}
-
-/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: hsl(var(--card));
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
+  background: hsl(var(--border));
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: hsl(var(--muted-foreground));
+}
+
+@keyframes surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-surface-in {
+  animation: surface-in 220ms ease-out both;
 }
