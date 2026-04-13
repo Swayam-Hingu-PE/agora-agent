@@ -107,7 +107,7 @@ class Agent:
             client=self.client,
             channel=channel_name,
             agent_uid=str(agent_uid),
-            remote_uids=[str(user_uid)],
+            remote_uids=["*"],
             enable_string_uid=True,
             idle_timeout=30,
             expires_in=3600,
