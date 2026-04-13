@@ -11,14 +11,12 @@ Follow [Get started with Agora](https://docs.agora.io/en/conversational-ai/get-s
 cp .env.example .env.local
 ```
 
-Edit `.env.local` and fill in your API keys:
+Edit `.env.local` and fill in your Agora credentials:
 - `APP_ID` - Your Agora App ID (Required)
 - `APP_CERTIFICATE` - Your Agora App Certificate (Required)
-- `LLM_API_KEY` - Your LLM API Key (Required)
-- `TTS_ELEVENLABS_API_KEY` - Your ElevenLabs API Key (Required)
-- `ASR_DEEPGRAM_API_KEY` - Your Deepgram API Key (Required)
+- Agora managed provider access should be enabled for this project
 
-**Note**: The service uses Token007 authentication generated from `APP_ID` and `APP_CERTIFICATE`. No API_KEY/API_SECRET needed.
+**Note**: The service uses Token007 authentication generated from `APP_ID` and `APP_CERTIFICATE`. Third-party vendor keys are not required in this default managed setup. The current default chain matches the Next.js quickstart: `DeepgramSTT` (`nova-3`) + `OpenAI` (`gpt-4o-mini`) + `MiniMaxTTS` (`speech_2_6_turbo` / `English_captivating_female1`).
 
 ### 2. Install Dependencies
 
@@ -76,5 +74,6 @@ curl -X POST http://localhost:8000/v2/stopAgent \
 This project uses `agora-agent-server-sdk`:
 - Package: `agora_agent`
 - Agent builder: `agora_agent.agentkit.Agent` with fluent `.with_llm()` / `.with_tts()` / `.with_stt()` API
-- Vendors: `OpenAI`, `ElevenLabsTTS`, `DeepgramSTT` from `agora_agent.agentkit.vendors`
+- Default vendors: `DeepgramSTT`, `OpenAI`, `MiniMaxTTS` from `agora_agent.agentkit.vendors`
+- Optional BYOK examples in `src/agent.py`: `DeepgramSTT`, `OpenAI(api_key=...)`, `ElevenLabsTTS`
 - Token: `agora_agent.agentkit.token.generate_convo_ai_token`

@@ -114,10 +114,10 @@ server-python/
 ```python
 from agora_agent import Agora, Area
 from agora_agent.agentkit import Agent as AgoraAgent
-from agora_agent.agentkit.vendors import OpenAI, ElevenLabsTTS, DeepgramSTT
+from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI
 
 # Create Agora client (Token007 auth from APP_ID + APP_CERTIFICATE)
-client = Agora(area=Area.CN, app_id=app_id, app_certificate=app_certificate)
+client = Agora(area=Area.US, app_id=app_id, app_certificate=app_certificate)
 
 # Create agent with fluent API
 agora_agent = AgoraAgent(
@@ -130,18 +130,19 @@ agora_agent = AgoraAgent(
 
 agora_agent = (
     agora_agent
-    .with_llm(OpenAI(api_key=key, model="gpt-4o-mini"))
-    .with_tts(ElevenLabsTTS(key=key, voice_id=voice_id, model_id=model_id))
-    .with_stt(DeepgramSTT(api_key=key, language="en-US"))
+    .with_llm(OpenAI(model="gpt-4o-mini"))
+    .with_tts(MiniMaxTTS(model="speech_2_6_turbo", voice_id="English_captivating_female1"))
+    .with_stt(DeepgramSTT(model="nova-3", language="en"))
 )
 
 session = agora_agent.create_session(
     client=client,
     channel=channel,
     agent_uid=agent_uid,
-    remote_uids=["*"],          # Subscribe all users
+    remote_uids=[user_uid],     # Subscribe only the requester
     enable_string_uid=True,
-    idle_timeout=120,
+    idle_timeout=30,
+    expires_in=3600,
 )
 agent_id = session.start()
 ```

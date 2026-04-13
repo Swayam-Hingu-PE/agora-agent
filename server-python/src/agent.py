@@ -8,7 +8,7 @@ import time
 from typing import Any, Dict
 from agora_agent import Agora, Area
 from agora_agent.agentkit import Agent as AgoraAgent
-from agora_agent.agentkit.vendors import OpenAI, ElevenLabsTTS, DeepgramSTT
+from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI
 
 
 class Agent:
@@ -41,7 +41,7 @@ class Agent:
         agent_uid: str,
         user_uid: str
     ) -> Dict[str, Any]:
-        """Start agent with ASR, LLM, and TTS configuration."""
+        """Start agent with the same default vendor chain as the Next.js quickstart."""
         if not channel_name or not str(channel_name).strip():
             raise ValueError("channel_name is required and cannot be empty")
         if not agent_uid or not str(agent_uid).strip():
@@ -49,13 +49,43 @@ class Agent:
         if not user_uid or not str(user_uid).strip():
             raise ValueError("user_uid is required and cannot be empty")
 
-        asr_api_key = os.getenv("ASR_DEEPGRAM_API_KEY")
-        llm_api_key = os.getenv("LLM_API_KEY")
-        tts_api_key = os.getenv("TTS_ELEVENLABS_API_KEY")
-        voice_id = os.getenv("TTS_ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
-        model_id = os.getenv("TTS_ELEVENLABS_MODEL_ID", "eleven_turbo_v2")
-
         name = f"agent_{channel_name}_{agent_uid}_{int(time.time())}"
+
+        # Default managed path: DeepgramSTT + OpenAI + MiniMaxTTS.
+        llm = OpenAI(
+            model="gpt-4o-mini",
+            greeting_message="Hello! I am your AI assistant. How can I help you?",
+            failure_message="I'm sorry, I'm having trouble processing your request.",
+            max_history=15,
+            max_tokens=1024,
+            temperature=0.7,
+            top_p=0.95,
+        )
+        stt = DeepgramSTT(model="nova-3", language="en")
+        tts = MiniMaxTTS(model="speech_2_6_turbo", voice_id="English_captivating_female1")
+
+        # Optional BYOK example: replace the STT block above and set DEEPGRAM_API_KEY.
+        # stt = DeepgramSTT(api_key=os.getenv("DEEPGRAM_API_KEY"), model="nova-3", language="en")
+
+        # Optional BYOK example: replace the LLM block above and set OPENAI_API_KEY.
+        # llm = OpenAI(
+        #     api_key=os.getenv("OPENAI_API_KEY"),
+        #     model="gpt-4o-mini",
+        #     greeting_message="Hello! I am your AI assistant. How can I help you?",
+        #     failure_message="I'm sorry, I'm having trouble processing your request.",
+        #     max_history=15,
+        #     max_tokens=1024,
+        #     temperature=0.7,
+        #     top_p=0.95,
+        # )
+
+        # Optional BYOK example: replace the TTS block above and set ELEVENLABS_API_KEY.
+        # from agora_agent.agentkit.vendors import ElevenLabsTTS
+        # tts = ElevenLabsTTS(
+        #     key=os.getenv("ELEVENLABS_API_KEY"),
+        #     model_id="eleven_flash_v2_5",
+        #     voice_id=os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB"),
+        # )
         
         agora_agent = AgoraAgent(
             name=name,
@@ -68,18 +98,19 @@ class Agent:
         
         agora_agent = (
             agora_agent
-            .with_llm(OpenAI(api_key=llm_api_key, model="gpt-4o-mini"))
-            .with_tts(ElevenLabsTTS(key=tts_api_key, voice_id=voice_id, model_id=model_id))
-            .with_stt(DeepgramSTT(api_key=asr_api_key, language="en-US"))
+            .with_llm(llm)
+            .with_tts(tts)
+            .with_stt(stt)
         )
-        
+
         session = agora_agent.create_session(
             client=self.client,
             channel=channel_name,
             agent_uid=str(agent_uid),
-            remote_uids=["*"],
+            remote_uids=[str(user_uid)],
             enable_string_uid=True,
-            idle_timeout=120,
+            idle_timeout=30,
+            expires_in=3600,
         )
 
         agent_id = session.start()

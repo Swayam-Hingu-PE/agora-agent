@@ -67,7 +67,7 @@ agent = Agent()  # Singleton
 ```python
 from agora_agent import Agora, Area
 from agora_agent.agentkit import Agent as AgoraAgent
-from agora_agent.agentkit.vendors import OpenAI, ElevenLabsTTS, DeepgramSTT
+from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI
 
 class Agent:
     def __init__(self):
@@ -88,16 +88,17 @@ class Agent:
         agora_agent = (
             agora_agent
             .with_llm(OpenAI(...))
-            .with_tts(ElevenLabsTTS(...))
+            .with_tts(MiniMaxTTS(...))
             .with_stt(DeepgramSTT(...))
         )
         session = agora_agent.create_session(
             client=self.client,
             channel=channel_name,
             agent_uid=str(agent_uid),
-            remote_uids=["*"],
+            remote_uids=[str(user_uid)],
             enable_string_uid=True,
-            idle_timeout=120,
+            idle_timeout=30,
+            expires_in=3600,
         )
         return session.start()  # returns agent_id
 ```
@@ -208,21 +209,21 @@ token = generate_convo_ai_token(
 ## Three-Tier AI Configuration
 
 ### ASR (Automatic Speech Recognition)
-**Provider**: Deepgram
+**Provider**: DeepgramSTT
 ```python
-DeepgramSTT(api_key=asr_api_key, language="en-US")
+DeepgramSTT(model="nova-3", language="en")
 ```
 
 ### LLM (Large Language Model)
-**Provider**: OpenAI (configurable)
+**Provider**: OpenAI
 ```python
-OpenAI(api_key=llm_api_key, model="gpt-4o-mini")
+OpenAI(model="gpt-4o-mini")
 ```
 
 ### TTS (Text-to-Speech)
-**Provider**: ElevenLabs
+**Provider**: MiniMaxTTS
 ```python
-ElevenLabsTTS(key=tts_api_key, voice_id=voice_id, model_id=model_id)
+MiniMaxTTS(model="speech_2_6_turbo", voice_id="English_captivating_female1")
 ```
 
 ## Data Flow

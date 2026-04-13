@@ -1,8 +1,8 @@
 'use client'
 
-import { TurnStatus } from 'agora-agent-client-toolkit'
 import { cn } from '@/lib/utils'
 import { type TranscriptItem, useAppStore } from '@/stores/app-store'
+import { TurnStatus } from 'agora-agent-client-toolkit'
 import { useEffect, useRef } from 'react'
 
 function TranscriptRow({ item }: { item: TranscriptItem }) {
@@ -10,25 +10,30 @@ function TranscriptRow({ item }: { item: TranscriptItem }) {
   const isInProgress = item.status === TurnStatus.IN_PROGRESS
 
   return (
-    <div className={cn('flex gap-3 p-3', isAgent ? 'flex-row' : 'flex-row-reverse')}>
-      <div
-        className={cn(
-          'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium text-white shrink-0',
-          isAgent ? 'bg-blue-500' : 'bg-emerald-500',
-        )}
-      >
-        {isAgent ? 'AI' : 'Me'}
-      </div>
-      <div
-        className={cn(
-          'max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
-          isAgent ? 'bg-slate-700 text-slate-100 rounded-tl-sm' : 'bg-blue-600 text-white rounded-tr-sm',
-        )}
-      >
-        <p className="m-0 whitespace-pre-wrap break-words">
-          {item.text}
-          {isInProgress && <span className="inline-block w-1.5 h-4 ml-1 bg-current animate-pulse rounded-sm" />}
-        </p>
+    <div className={cn('flex px-4 py-3', isAgent ? 'justify-start' : 'justify-end')}>
+      <div className={cn('flex max-w-[82%] flex-col gap-1', isAgent ? 'items-start' : 'items-end')}>
+        <span
+          className={cn(
+            'text-[11px] uppercase tracking-[0.16em]',
+            isAgent ? 'text-[hsl(var(--muted-foreground))]' : 'text-cyan-300',
+          )}
+        >
+          {isAgent ? 'Agent' : 'You'}
+        </span>
+
+        <div
+          className={cn(
+            'rounded-xl border px-4 py-3 text-sm leading-6',
+            isAgent
+              ? 'border-[hsl(var(--border))] bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]'
+              : 'border-cyan-500/20 bg-cyan-500/10 text-cyan-50',
+          )}
+        >
+          <p className="m-0 whitespace-pre-wrap break-words">
+            {item.text}
+            {isInProgress && <span className="ml-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-current" />}
+          </p>
+        </div>
       </div>
     </div>
   )
@@ -45,24 +50,18 @@ export function SubtitlePanel() {
   }, [transcripts])
 
   return (
-    <div className="flex flex-col h-full bg-slate-800/50 rounded-xl border border-slate-700/50">
-      <div className="px-4 py-3 border-b border-slate-700/50">
-        <h2 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-            />
-          </svg>
-          Conversation Subtitles
-        </h2>
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-subtle))]">
+      <div className="border-b border-[hsl(var(--border))] px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium text-[hsl(var(--foreground))]">Transcript</h2>
+          <span className="text-xs text-[hsl(var(--muted-foreground))]">{transcripts.length} turns</span>
+        </div>
       </div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 min-h-0">
+
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-2">
         {transcripts.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-            Waiting for conversation to start...
+          <div className="flex h-full items-center justify-center px-6 text-sm text-[hsl(var(--muted-foreground))]">
+            Waiting for the first utterance.
           </div>
         ) : (
           transcripts.map((item) => <TranscriptRow key={item.id} item={item} />)
