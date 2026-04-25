@@ -6,9 +6,17 @@ High-level API for managing Agora Conversational AI Agents.
 import os
 import time
 from typing import Any, Dict
-from agora_agent import Agora, Area
+
+from agora_agent import Area, AsyncAgora
 from agora_agent.agentkit import Agent as AgoraAgent
 from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI
+
+ADA_PROMPT = """You are Ada, an agentic developer advocate from Agora. You help developers understand and build with Agora's Conversational AI platform.
+
+Agora is a real-time communications company. The product you represent is the Agora Conversational AI Engine.
+
+If you do not know a specific fact about Agora, say so plainly and suggest checking docs.agora.io. Keep most replies to one or two sentences unless the user explicitly asks for more detail.
+"""
 
 
 class Agent:
@@ -20,33 +28,37 @@ class Agent:
     """
     
     def __init__(self):
-        self.app_id = os.getenv("APP_ID")
-        self.app_certificate = os.getenv("APP_CERTIFICATE")
-        
+        self.app_id = os.getenv("AGORA_APP_ID")
+        self.app_certificate = os.getenv("AGORA_APP_CERTIFICATE")
+        self.greeting = os.getenv(
+            "AGENT_GREETING",
+            "Hi there! I'm Ada, your virtual assistant from Agora. How can I help?",
+        )
+
         if not self.app_id or not self.app_certificate:
-            raise ValueError("APP_ID and APP_CERTIFICATE are required")
-        
-        self.client = Agora(
+            raise ValueError("AGORA_APP_ID and AGORA_APP_CERTIFICATE are required")
+
+        self.client = AsyncAgora(
             area=Area.US,
             app_id=self.app_id,
             app_certificate=self.app_certificate,
         )
-        
+
         # Track active sessions by agent_id
         self._sessions: Dict[str, Any] = {}
-    
-    def start(
+
+    async def start(
         self,
         channel_name: str,
-        agent_uid: str,
-        user_uid: str
+        agent_uid: int,
+        user_uid: int
     ) -> Dict[str, Any]:
         """Start agent with the same default vendor chain as the Next.js quickstart."""
         if not channel_name or not str(channel_name).strip():
             raise ValueError("channel_name is required and cannot be empty")
-        if not agent_uid or not str(agent_uid).strip():
+        if agent_uid <= 0:
             raise ValueError("agent_uid is required and cannot be empty")
-        if not user_uid or not str(user_uid).strip():
+        if user_uid <= 0:
             raise ValueError("user_uid is required and cannot be empty")
 
         name = f"agent_{channel_name}_{agent_uid}_{int(time.time())}"
@@ -54,8 +66,8 @@ class Agent:
         # Default managed path: DeepgramSTT + OpenAI + MiniMaxTTS.
         llm = OpenAI(
             model="gpt-4o-mini",
-            greeting_message="Hello! I am your AI assistant. How can I help you?",
-            failure_message="I'm sorry, I'm having trouble processing your request.",
+            greeting_message=self.greeting,
+            failure_message="Please wait a moment.",
             max_history=15,
             max_tokens=1024,
             temperature=0.7,
@@ -86,13 +98,32 @@ class Agent:
         #     model_id="eleven_flash_v2_5",
         #     voice_id=os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB"),
         # )
-        
+
         agora_agent = AgoraAgent(
             name=name,
-            instructions="You are a helpful AI assistant.",
-            greeting="Hello! I am your AI assistant. How can I help you?",
-            failure_message="I'm sorry, I'm having trouble processing your request.",
-            advanced_features={"enable_rtm": True},
+            instructions=ADA_PROMPT,
+            greeting=self.greeting,
+            failure_message="Please wait a moment.",
+            max_history=50,
+            turn_detection={
+                "config": {
+                    "speech_threshold": 0.5,
+                    "start_of_speech": {
+                        "mode": "vad",
+                        "vad_config": {
+                            "interrupt_duration_ms": 160,
+                            "prefix_padding_ms": 300,
+                        },
+                    },
+                    "end_of_speech": {
+                        "mode": "vad",
+                        "vad_config": {
+                            "silence_duration_ms": 480,
+                        },
+                    },
+                },
+            },
+            advanced_features={"enable_rtm": True, "enable_tools": True},
             parameters={"data_channel": "rtm", "enable_error_message": True},
         )
         
@@ -107,14 +138,14 @@ class Agent:
             client=self.client,
             channel=channel_name,
             agent_uid=str(agent_uid),
-            remote_uids=["*"],
+            remote_uids=[str(user_uid)],
             enable_string_uid=True,
             idle_timeout=30,
             expires_in=3600,
         )
 
-        agent_id = session.start()
-        
+        agent_id = await session.start()
+
         # Save session for later stop
         self._sessions[agent_id] = session
         
@@ -123,14 +154,19 @@ class Agent:
             "channel_name": channel_name,
             "status": "started",
         }
-    
-    def stop(self, agent_id: str) -> None:
-        """Stop a running agent via its session."""
+
+    async def stop(self, agent_id: str) -> None:
+        """Stop a running agent. Falls back to the stateless client path."""
         if not agent_id or not str(agent_id).strip():
             raise ValueError("agent_id is required and cannot be empty")
-        
+
         session = self._sessions.pop(agent_id, None)
         if session:
-            session.stop()
-        else:
-            raise ValueError(f"No active session found for agent_id: {agent_id}")
+            try:
+                await session.stop()
+                return
+            except Exception:
+                # Fall back to the stateless SDK path if the in-memory session is stale.
+                pass
+
+        await self.client.stop_agent(agent_id)

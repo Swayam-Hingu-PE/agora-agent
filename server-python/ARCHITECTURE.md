@@ -2,12 +2,14 @@
 
 ## Overview
 
-Python FastAPI service providing REST APIs for Agora Conversational AI Agent management and token generation.
+Python FastAPI service providing the local backend path for token generation and Agora agent management.
 
-**Core Responsibilities**:
+**Core Responsibilities in local development**:
 - Generate RTC/RTM tokens for client connections
 - Start/stop AI agents with ASR, LLM, and TTS configuration
-- Proxy between frontend and Agora Conversational AI API
+- Provide a stateless-safe FastAPI bridge between the frontend and Agora Conversational AI APIs
+
+In deployed web mode, the Next app can serve the same API contract directly. This module is therefore the local development backend, not the only backend implementation in the repo.
 
 ## Tech Stack
 
@@ -59,30 +61,32 @@ agent = Agent()  # Singleton
 **Responsibilities**:
 - Wrap agora-agent-server-sdk
 - Configure ASR/LLM/TTS providers
-- Manage agent lifecycle (start/stop via AgentSession)
+- Manage agent lifecycle with async session start and stateless-safe stop fallback
 - Parameter validation
 
 **Key Components**:
 
 ```python
-from agora_agent import Agora, Area
+from agora_agent import Area, AsyncAgora
 from agora_agent.agentkit import Agent as AgoraAgent
 from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI
 
 class Agent:
     def __init__(self):
-        self.client = Agora(
-            area=Area.CN,
+        self.client = AsyncAgora(
+            area=Area.US,
             app_id=self.app_id,
             app_certificate=self.app_certificate,
         )
     
-    def start(channel_name, agent_uid, user_uid):
+    async def start(channel_name, agent_uid, user_uid):
         agora_agent = AgoraAgent(
             name=name,
-            instructions="...",
-            greeting="...",
-            advanced_features={"enable_rtm": True},
+            instructions="Ada persona prompt...",
+            greeting="Hi there! I'm Ada, your virtual assistant from Agora. How can I help?",
+            max_history=50,
+            turn_detection={...},
+            advanced_features={"enable_rtm": True, "enable_tools": True},
             parameters={"data_channel": "rtm", "enable_error_message": True},
         )
         agora_agent = (
@@ -100,7 +104,7 @@ class Agent:
             idle_timeout=30,
             expires_in=3600,
         )
-        return session.start()  # returns agent_id
+        return await session.start()  # returns agent_id
 ```
 
 ## API Endpoints
@@ -127,7 +131,7 @@ Generate connection configuration for frontend client.
 **Logic**:
 1. Generate random UIDs for user and agent
 2. Create channel name with timestamp
-3. Generate token via `generate_convo_ai_token()` (24h expiry)
+3. Generate token via `generate_convo_ai_token()` (1h expiry)
 4. Return configuration bundle
 
 ### POST /v2/startAgent
@@ -138,8 +142,8 @@ Start an AI agent in specified channel.
 ```json
 {
   "channelName": "channel_1770199765",
-  "rtcUid": "58888506",
-  "userUid": "1234567"
+  "rtcUid": 58888506,
+  "userUid": 1234567
 }
 ```
 
@@ -182,15 +186,13 @@ Stop a running agent.
 Loaded from `.env.local` (priority) or `.env`:
 
 ```bash
-APP_ID=your_app_id                    # Agora App ID
-APP_CERTIFICATE=your_app_certificate  # Agora App Certificate
-ASR_DEEPGRAM_API_KEY=your_key        # Speech-to-Text
-LLM_API_KEY=your_key                 # Language Model
-TTS_ELEVENLABS_API_KEY=your_key      # Text-to-Speech
-PORT=8000                             # HTTP server port
+AGORA_APP_ID=your_app_id
+AGORA_APP_CERTIFICATE=your_app_certificate
+AGENT_GREETING=Hi there! I'm Ada, your virtual assistant from Agora. How can I help?
+PORT=8000
 ```
 
-**Note**: Uses Token007 authentication generated from `APP_ID` and `APP_CERTIFICATE`. No API_KEY/API_SECRET needed.
+**Note**: Uses Token007 authentication generated from `AGORA_APP_ID` and `AGORA_APP_CERTIFICATE`. No third-party vendor keys are required in the default managed setup.
 
 ### Token Generation
 
@@ -202,7 +204,7 @@ token = generate_convo_ai_token(
     app_certificate=app_certificate,
     channel_name=channel_name,
     account=str(user_uid),
-    token_expire=86400,
+    token_expire=3600,
 )
 ```
 
@@ -235,7 +237,7 @@ FastAPI Router (server.py)
     ↓
 Agent Class (agent.py)
     ↓
-agora-agent-server-sdk (AgentSession)
+agora-agent-server-sdk (AsyncAgora + AgentSession)
     ↓
 Agora REST API
     ↓
@@ -248,12 +250,12 @@ Frontend Client
 
 ## Integration with Frontend
 
-Frontend connects via Next.js proxy (`proxy.ts`):
+Frontend connects through Next route handlers in `web-client/app/api`. In local Python mode, those handlers forward to the FastAPI service through `AGENT_BACKEND_URL`:
 
 ```
-/api/get_config    → http://localhost:8000/get_config
-/api/v2/startAgent → http://localhost:8000/v2/startAgent
-/api/v2/stopAgent  → http://localhost:8000/v2/stopAgent
+/api/get_config    → Next route handler → http://localhost:8000/get_config
+/api/v2/startAgent → Next route handler → http://localhost:8000/v2/startAgent
+/api/v2/stopAgent  → Next route handler → http://localhost:8000/v2/stopAgent
 ```
 
 ## Error Handling
@@ -262,7 +264,7 @@ Frontend connects via Next.js proxy (`proxy.ts`):
 |-----------|-------------|-------------|
 | ValueError | 400 | Invalid parameters |
 | RuntimeError | 500 | SDK/API errors |
-| Agent not found | 404 | Invalid agent_id |
+| Agent not found | 200 | Stop is treated as idempotent when the platform session is already gone |
 
 ## Dependencies
 

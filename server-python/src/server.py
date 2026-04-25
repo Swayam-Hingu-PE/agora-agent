@@ -10,6 +10,7 @@ HTTP APIs:
 import os
 import random
 import time
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env.local or .env
@@ -17,7 +18,7 @@ _base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_base_dir, '.env.local'))
 load_dotenv(os.path.join(_base_dir, '.env'))
 
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agora_agent.agentkit.token import generate_convo_ai_token
@@ -61,8 +62,8 @@ router = APIRouter()
 class StartAgentRequest(BaseModel):
     """Request body for POST /v2/startAgent"""
     channelName: str
-    rtcUid: str
-    userUid: str
+    rtcUid: int
+    userUid: int
 
 
 class StopAgentRequest(BaseModel):
@@ -71,8 +72,15 @@ class StopAgentRequest(BaseModel):
 
 
 # API endpoints
+def _generate_channel_name() -> str:
+    return f"ai-conversation-{int(time.time())}-{random.randint(1000, 9999)}"
+
+
 @router.get("/get_config")
-def get_config():
+async def get_config(
+    channel: Optional[str] = Query(default=None),
+    uid: Optional[int] = Query(default=None),
+):
     """Generate connection configuration"""
     if agent is None:
         raise HTTPException(
@@ -81,34 +89,31 @@ def get_config():
         )
 
     try:
-        # Generate random UIDs
-        user_uid = random.randint(1000, 9999999)
-        agent_uid = random.randint(10000000, 99999999)
-        
-        # Generate channel name
-        channel_name = f"channel_{int(time.time())}"
-        
+        user_uid = uid or random.randint(1000, 9999999)
+        agent_uid = str(random.randint(10000000, 99999999))
+        channel_name = channel or _generate_channel_name()
+
         # Get credentials from environment
-        app_id = os.getenv("APP_ID")
-        app_certificate = os.getenv("APP_CERTIFICATE")
-        
-        # Generate convo AI token (RTC + RTM)
+        app_id = os.getenv("AGORA_APP_ID")
+        app_certificate = os.getenv("AGORA_APP_CERTIFICATE")
+
+        # Generate a one-hour RTC+RTM token and renew it client-side as needed.
         token = generate_convo_ai_token(
             app_id=app_id,
             app_certificate=app_certificate,
             channel_name=channel_name,
             account=str(user_uid),
-            token_expire=86400,
+            token_expire=3600,
         )
-        
+
         config_data = {
             "app_id": app_id,
             "token": token,
             "uid": str(user_uid),
             "channel_name": channel_name,
-            "agent_uid": str(agent_uid)
+            "agent_uid": agent_uid,
         }
-        
+
         return {
             "code": 0,
             "data": config_data,
@@ -119,7 +124,7 @@ def get_config():
 
 
 @router.post("/v2/startAgent")
-def start_agent(request: StartAgentRequest):
+async def start_agent(request: StartAgentRequest):
     """Start agent in a channel"""
     if agent is None:
         raise HTTPException(
@@ -128,7 +133,7 @@ def start_agent(request: StartAgentRequest):
         )
 
     try:
-        result = agent.start(
+        result = await agent.start(
             channel_name=request.channelName,
             agent_uid=request.rtcUid,
             user_uid=request.userUid,
@@ -139,7 +144,7 @@ def start_agent(request: StartAgentRequest):
 
 
 @router.post("/v2/stopAgent")
-def stop_agent(request: StopAgentRequest):
+async def stop_agent(request: StopAgentRequest):
     """Stop agent by ID"""
     if agent is None:
         raise HTTPException(
@@ -148,11 +153,9 @@ def stop_agent(request: StopAgentRequest):
         )
 
     try:
-        agent.stop(request.agentId)
+        await agent.stop(request.agentId)
         return {"code": 0, "msg": "success"}
     except Exception as e:
-        if isinstance(e, ValueError):
-            raise HTTPException(status_code=404, detail=str(e))
         raise _to_http_error(e)
 
 

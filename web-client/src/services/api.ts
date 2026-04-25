@@ -8,8 +8,13 @@ export interface GetConfigResponse {
   agent_uid: string
 }
 
-export async function getConfig(): Promise<GetConfigResponse> {
-  const response = await fetch(`${API_BASE_URL}/get_config`, {
+export async function getConfig(options?: { channel?: string; uid?: string }): Promise<GetConfigResponse> {
+  const params = new URLSearchParams()
+  if (options?.channel) params.set('channel', options.channel)
+  if (options?.uid) params.set('uid', options.uid)
+
+  const query = params.toString()
+  const response = await fetch(`${API_BASE_URL}/get_config${query ? `?${query}` : ''}`, {
     method: 'GET',
   })
 
@@ -25,18 +30,8 @@ export async function getConfig(): Promise<GetConfigResponse> {
   return result.data
 }
 
-export async function startAgent(channelName: string, rtcUid: string, userUid: string): Promise<string> {
+export async function startAgent(channelName: string, rtcUid: number, userUid: number): Promise<string> {
   const payload = { channelName, rtcUid, userUid }
-
-  // Debug: Log the request payload
-  console.log('🔍 startAgent Request:', {
-    url: `${API_BASE_URL}/v2/startAgent`,
-    method: 'POST',
-    payload: payload,
-    curl: `curl -X POST ${window.location.origin}${API_BASE_URL}/v2/startAgent \\
-  -H "Content-Type: application/json" \\
-  -d '${JSON.stringify(payload, null, 2)}'`,
-  })
 
   const response = await fetch(`${API_BASE_URL}/v2/startAgent`, {
     method: 'POST',
@@ -56,13 +51,13 @@ export async function startAgent(channelName: string, rtcUid: string, userUid: s
   return result.data.agent_id
 }
 
-export async function stopAgent(channelName: string, agentId: string): Promise<void> {
+export async function stopAgent(agentId: string): Promise<void> {
   if (!agentId) return
 
   const response = await fetch(`${API_BASE_URL}/v2/stopAgent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ channelName, agentId }),
+    body: JSON.stringify({ agentId }),
   })
 
   if (!response.ok) {

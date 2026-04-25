@@ -1,10 +1,6 @@
 # Agora Conversational AI Web Demo - Architecture
 
-## Overview
-
-A web demo showcasing quick integration of Agora Conversational AI, featuring real-time voice conversation, subtitle rendering, and log monitoring.
-
-> **Note**: For AI workflow rules and project specifications, see [AGENTS.md](./AGENTS.md)
+This module owns the browser experience and the web-facing `/api/*` entrypoints.
 
 ## Tech Stack
 
@@ -16,19 +12,16 @@ A web demo showcasing quick integration of Agora Conversational AI, featuring re
 | Language | TypeScript |
 | Build Tool | Turbopack |
 | Styling | Tailwind CSS |
-| State Management | Zustand |
 | RTC SDK | agora-rtc-react |
 | RTM SDK | agora-rtm |
-| ConvoAI Toolkit | agora-agent-client-toolkit + agora-agent-client-toolkit-react |
+| ConvoAI Toolkit | agora-agent-client-toolkit + agora-agent-uikit |
 
-### Backend
+### API Ownership
 
-| Category | Technology |
-|----------|------------|
-| Framework | FastAPI |
-| Language | Python 3 |
-| Agent SDK | agora-agent-server-sdk |
-| Token | agora_agent.agentkit.token (generate_convo_ai_token) |
+| Environment | Owner of `/api/*` | Implementation |
+|-------------|-------------------|----------------|
+| Local dev | Next route handlers with proxy fallback | `app/api/**/route.ts` forwarding to `AGENT_BACKEND_URL` |
+| Deployment | Next route handlers in-process | `app/api/**/route.ts` using `src/lib/server/agora.ts` |
 
 ## Project Structure
 
@@ -39,20 +32,17 @@ A web demo showcasing quick integration of Agora Conversational AI, featuring re
 │   └── page.tsx             # Home page (loads AgoraProvider + App)
 ├── src/                     # Frontend source
 │   ├── components/          # UI components
-│   │   ├── app.tsx          # Main application entry
-│   │   ├── subtitle-panel.tsx   # Subtitle rendering module
-│   │   ├── log-panel.tsx        # Log display module
-│   │   └── control-bar.tsx      # Control buttons (start/stop/mic)
+│   │   └── app.tsx          # Landing screen + live conversation UI
 │   ├── hooks/               # React hooks
 │   │   └── useAgoraConnection.ts # RTC/RTM/VoiceAI connection hook
-│   ├── stores/              # State management
-│   │   └── app-store.ts     # Zustand store
 │   ├── services/            # Service layer
 │   │   └── api.ts           # Backend API calls (get_config, startAgent, stopAgent)
 │   └── lib/                 # Utility libraries
+│       ├── conversation.ts  # Transcript + visualizer helpers
+│       ├── server/agora.ts  # Shared server-side Agora helpers for route handlers
 │       └── utils.ts         # Common utility functions
 │
-├── proxy.ts                 # Next.js 16 API proxy (replaces middleware)
+├── app/api/                 # Route handlers for quick Vercel deployment
 ├── ../server-python/        # Backend service (project root level)
 │   ├── src/
 │   │   ├── server.py        # FastAPI entry, route definitions
@@ -66,34 +56,20 @@ A web demo showcasing quick integration of Agora Conversational AI, featuring re
 
 ## Core Modules
 
-### 1. SubtitlePanel (Subtitle Rendering)
+### 1. App (Landing + Conversation)
 
-- Real-time display of user and AI Agent conversation
-- Distinct styling for user/agent messages
-- Auto-scroll to latest message
-- Message status display via `TurnStatus` from `agora-agent-client-toolkit`
-
-### 2. LogPanel (Log Display)
-
-- System runtime logs
-- Log level support (info/success/error/warning)
-- Timestamp display
-- Collapsible/expandable
-
-### 3. ControlBar (Control Bar)
-
-- Start/Stop Agent button
-- Microphone toggle button
-- Agent state indicator via `AgentState` from `agora-agent-client-toolkit`
+- Landing-page-to-conversation transition aligned with the Next.js quickstart
+- Uses `AgentVisualizer`, `ConvoTextStream`, and `MicButtonWithVisualizer` from `agora-agent-uikit`
+- Keeps the end-call and mic controls in the same docked conversation layout as the reference sample
 
 ## Data Flow
 
 ```
 User Action → useAgoraConnection hook → Agora SDK (agora-rtc-react)
                    ↓
-              Zustand Store ← AgoraVoiceAI Events (agora-agent-client-toolkit)
+ AgoraVoiceAI Events (agora-agent-client-toolkit)
                    ↓
-              UI Components
+ UIKit transcript + visualizer components
 ```
 
 ## API Endpoints
@@ -127,8 +103,8 @@ User Action → useAgoraConnection hook → Agora SDK (agora-rtc-react)
 // Request
 {
   "channelName": "test-channel",
-  "rtcUid": "12345678",
-  "userUid": "123456"
+  "rtcUid": 12345678,
+  "userUid": 123456
 }
 
 // Response
@@ -157,76 +133,63 @@ User Action → useAgoraConnection hook → Agora SDK (agora-rtc-react)
 }
 ```
 
-## Backend Architecture
+## Environment Modes
 
-### Python Service (FastAPI)
+### Local Python-Backed Development
 
 ```
+app/api/
+├── get_config/route.ts
+└── v2/
+    ├── startAgent/route.ts
+    └── stopAgent/route.ts
+
+Optional local backend:
 ../server-python/
 ├── src/
-│   ├── server.py        # FastAPI app, routes, CORS
-│   └── agent.py         # Agent start/stop logic
-└── requirements.txt     # Python dependencies
+│   ├── server.py
+│   └── agent.py
+└── requirements.txt
 ```
 
-### Environment Variables
+In this mode, the web client still receives all browser requests. The route handlers proxy to Python through `AGENT_BACKEND_URL`.
 
-Backend reads configuration from `server-python/.env.local`:
+### Single-Target Web Deployment
+
+The same `app/api/**/route.ts` files run directly inside the deployed Next app. No separate Python service is required.
+
+## Environment Variables
+
+The web client route handlers can read configuration from `web-client/.env.local` or Vercel project env vars:
 
 | Variable | Description |
 |----------|-------------|
-| APP_ID | Agora App ID |
-| APP_CERTIFICATE | Agora App Certificate |
-| ASR_DEEPGRAM_API_KEY | Deepgram ASR API Key |
-| LLM_API_KEY | LLM API Key |
-| TTS_ELEVENLABS_API_KEY | ElevenLabs TTS API Key |
-| PORT | Backend server port (default: 8000) |
+| AGORA_APP_ID | Agora App ID |
+| AGORA_APP_CERTIFICATE | Agora App Certificate |
+| AGENT_GREETING | Optional custom greeting for the Ada persona |
+| AGENT_BACKEND_URL | Optional Python backend URL for local proxy mode |
 
-### Proxy Configuration
+## Local Proxy Mode
 
-Next.js 16 uses `proxy.ts` to proxy `/api/*` requests to Python backend (port 8000):
+When `AGENT_BACKEND_URL` is set, the Next route handlers forward `/api/*` requests to the Python backend:
 
 ```typescript
-// proxy.ts
-export function GET(request: NextRequest) {
-  const url = new URL(request.url)
-  const backendUrl = `http://localhost:8000${url.pathname.replace('/api', '')}`
-  return fetch(backendUrl, { headers: request.headers })
-}
-```
-
-## State Management (Zustand)
-
-```typescript
-interface AppState {
-  // Connection
-  isConnected: boolean
-  isConnecting: boolean
-  channelName: string
-  
-  // Agent
-  agentId: string | null
-  agentState: AgentState        // from agora-agent-client-toolkit
-  
-  // Audio
-  isMicMuted: boolean
-  
-  // Transcripts
-  transcripts: TranscriptItem[] // uses TurnStatus from agora-agent-client-toolkit
-  
-  // Logs
-  logs: LogItem[]
-}
+const proxiedResponse = await proxyToPythonBackend('v2/startAgent', {
+  method: 'POST',
+  body: JSON.stringify({ channelName, rtcUid, userUid }),
+})
 ```
 
 ## Event Flow
 
 1. User clicks connect → Call `/api/get_config` to get configuration
-2. AgoraRTCProvider creates RTC client
-3. useAgoraConnection hook manages connection via `useJoin`, `usePublish` hooks
-4. Use returned token to login RTM → Join RTC channel
-5. Initialize `AgoraVoiceAI` from `agora-agent-client-toolkit` (imperative API)
-6. `voiceAI.subscribeMessage(channel)` to listen for subtitle/state events
-7. Call `/api/v2/startAgent` to start Agent
-8. Listen to `AgoraVoiceAIEvents` → Update Zustand store → UI re-renders
-9. User clicks stop → Call `/api/v2/stopAgent` → Cleanup resources
+2. `AgoraRTCProvider` creates exactly one RTC client via `useRef`, which avoids StrictMode double creation
+3. `useAgoraConnection` gates `useJoin` and `useLocalMicrophoneTrack` behind a readiness flag
+4. `/api/*` is handled in-process in deployed mode, or proxied to Python when `AGENT_BACKEND_URL` is set
+5. Use returned token to login RTM and join RTC
+6. Initialize `AgoraVoiceAI` from `agora-agent-client-toolkit`
+7. `voiceAI.subscribeMessage(channel)` listens for transcript and agent-state events
+8. Call `/api/v2/startAgent` to start the requester-scoped agent session
+9. Normalize local transcript UID `0` back to the actual RTC UID before rendering `ConvoTextStream`
+10. Renew RTC and RTM tokens through `/api/get_config?channel=...&uid=...` before expiry
+11. User clicks stop → Call `/api/v2/stopAgent` → Cleanup resources

@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useMemo } from 'react'
+import { useRef } from 'react'
 
 const AgoraProvider = dynamic(
   async () => {
@@ -14,8 +14,11 @@ const AgoraProvider = dynamic(
 
     return {
       default: ({ children }: { children: React.ReactNode }) => {
-        const client = useMemo(() => AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }), [])
-        return <AgoraRTCProvider client={client}>{children}</AgoraRTCProvider>
+        const clientRef = useRef<ReturnType<typeof AgoraRTC.createClient> | null>(null)
+        if (!clientRef.current) {
+          clientRef.current = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
+        }
+        return <AgoraRTCProvider client={clientRef.current}>{children}</AgoraRTCProvider>
       },
     }
   },
