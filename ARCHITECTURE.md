@@ -1,66 +1,74 @@
 # Agora Conversational AI Demo — Architecture
 
-## System Architecture
+This quickstart supports two runtime environments. The UI is the same in both modes, but the owner of `/api/*` changes by environment.
+
+## Local Python-Backed Development
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         Frontend                             │
-│  Next.js 16 + React 19 + TypeScript + Agora Web SDK        │
-│  (Port 3000)                                                │
-└──────────────────┬──────────────────────────────────────────┘
-                   │ /api/* proxy (proxy.ts)
-                   ↓
-┌─────────────────────────────────────────────────────────────┐
-│                         Backend                              │
-│  Python FastAPI + Agora Agent SDK                           │
-│  (Port 8000)                                                │
-└──────────────────┬──────────────────────────────────────────┘
-                   │ REST API (Token007 auth)
-                   ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Agora Cloud Services                      │
-│  • RTC (Real-Time Communication — audio)                    │
-│  • RTM (Real-Time Messaging — subtitles/transcription)      │
-│  • Conversational AI Engine (ASR + LLM + TTS)               │
-└─────────────────────────────────────────────────────────────┘
+Browser
+  ↓
+Next.js app on :3000
+  ↓
+/api/* route handlers proxy through AGENT_BACKEND_URL
+  ↓
+FastAPI service on :8000
+  ↓
+Agora Cloud Services
 ```
 
-## Data Flow
+- `web-client` owns the browser UI and the `/api/*` entrypoints
+- `server-python` owns the actual token generation and agent start/stop logic
+- this is the mode used by `bun run dev`
+
+## Single-Target Web Deployment
+
+```
+Browser
+  ↓
+Next.js app
+  ↓
+/api/* route handlers run in-process
+  ↓
+Agora Cloud Services
+```
+
+- `web-client` owns both the UI and the deployed `/api/*` implementation
+- `server-python` is not required for this deployment path
+
+## Shared Conversation Flow
 
 ### 1. Connection
 
 ```
-User clicks "Start"
-  → Frontend: GET /api/get_config
-  → Backend: generate_convo_ai_token(app_id, app_certificate, channel, account)
-  → Frontend: Join RTC channel + Login RTM with token
+Frontend: GET /api/get_config
+  → Generate Token007 config for a user UID, agent UID, and channel
+  → Frontend joins RTC and logs into RTM
 ```
 
 ### 2. Agent Start
 
 ```
 Frontend: POST /api/v2/startAgent { channelName, rtcUid, userUid }
-  → Backend: Build AgoraAgent (Deepgram ASR + OpenAI LLM + ElevenLabs TTS)
-  → Backend: session.start() → agent_id
-  → Agent joins RTC channel → Frontend receives audio + RTM subtitles
+  → Build agent session
+  → Scope remote_uids to the requesting user
+  → Start session and return agent_id
 ```
 
 ### 3. Conversation
 
 ```
-User speaks → RTC audio → Agora Cloud
-  → Deepgram (ASR): audio → text
-  → OpenAI (LLM): text → response
-  → ElevenLabs (TTS): response → audio
-  → RTC audio + RTM subtitles → Frontend
+User audio → RTC
+  → Managed ASR, LLM, and TTS pipeline
+  → Agent audio + RTM transcript events
+  → UIKit transcript and visualizer in the web app
 ```
 
 ### 4. Agent Stop
 
 ```
 Frontend: POST /api/v2/stopAgent { agentId }
-  → Backend: session.stop()
-  → Agent leaves channel → Frontend cleanup
+  → Stop session directly or through stateless fallback
+  → Client cleans up RTC and RTM state
 ```
 
 ## API Endpoints
@@ -68,14 +76,14 @@ Frontend: POST /api/v2/stopAgent { agentId }
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/get_config` | GET | Generate connection config (Token007, channel, UIDs) |
-| `/v2/startAgent` | POST | Start AI agent |
-| `/v2/stopAgent` | POST | Stop agent by agent_id |
+| `/v2/startAgent` | POST | Start the agent session |
+| `/v2/stopAgent` | POST | Stop the agent by `agent_id` |
 
-Frontend calls these as `/api/*`, proxied to backend via `web-client/proxy.ts`.
+Frontend calls these as `/api/*`. In local Python mode, the Next handlers proxy to `AGENT_BACKEND_URL`; in Vercel they run in-process inside the Next app.
 
 ## Authentication
 
-Token007 (AccessToken2) — generated from `APP_ID` + `APP_CERTIFICATE` only. No API_KEY/API_SECRET needed. The SDK handles token generation and API auth internally.
+Token007 (AccessToken2) — generated from `AGORA_APP_ID` + `AGORA_APP_CERTIFICATE` only. No API_KEY/API_SECRET needed. The SDK handles token generation and API auth internally.
 
 ## Detailed Documentation
 

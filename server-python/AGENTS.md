@@ -1,194 +1,83 @@
-# Agora Agent Service - AI Assistant Guide
+# Python Backend Agent Guide
 
-This document is designed for AI programming assistants to understand and work with this project effectively.
+Use this guide when changing files under `server-python/`.
 
-## Project Overview
+## Current Role
 
-**Purpose:** FastAPI-based service for managing Agora Conversational AI Agents
+This module is the local FastAPI backend for the quickstart. It remains the authoritative local backend when developing the full stack on one machine.
 
-**Tech Stack:**
+The deployed web app can also serve `/api/*` directly from Next route handlers, so do not assume Python owns production traffic in every environment.
+
+## Current Stack
+
 - Python 3.8+
-- FastAPI (web framework)
-- agora-agent-server-sdk (Agora Agent SDK)
-- uvicorn (ASGI server)
+- FastAPI
+- `agora-agent-server-sdk`
+- `python-dotenv`
+- `uvicorn`
 
-**Architecture:**
-```
-HTTP Request → FastAPI (server.py) → Agent (agent.py) → agora-agent-server-sdk → Agora API
-```
+## Current Implementation Model
 
-**Key Components:**
-- `src/server.py` - HTTP endpoints and request handling
-- `src/agent.py` - Business logic wrapper around SDK
-- SDK handles token generation, API calls, and configuration
+- `src/server.py` exposes `/get_config`, `/v2/startAgent`, and `/v2/stopAgent`
+- `src/agent.py` wraps `AsyncAgora`
+- agent sessions are scoped to the requesting user with `remote_uids=[user_uid]`
+- stop is idempotent through a session stop first, then `client.stop_agent(...)` fallback
+- token expiry is 1 hour
+- default providers are the managed Deepgram STT, OpenAI LLM, and MiniMax TTS path used by the current quickstart
 
-## Build and Test Commands
+## Environment
 
-### Setup
+Setup from the repo root:
+
 ```bash
-# First time setup
-cp .env.example .env.local
-# Edit .env.local with actual API keys
+cp server-python/.env.example server-python/.env.local
+```
 
-# Install dependencies
+Required values:
+
+```bash
+AGORA_APP_ID=your_agora_app_id
+AGORA_APP_CERTIFICATE=your_agora_app_certificate
+```
+
+Optional values:
+
+```bash
+PORT=8000
+AGENT_GREETING=Custom greeting
+```
+
+Do not assume separate ASR, LLM, or TTS vendor secrets are required unless the code introduces a custom non-managed provider path.
+
+## Important Files
+
+- `src/server.py`: FastAPI routes and config generation
+- `src/agent.py`: async agent lifecycle and provider configuration
+- `.env.example`: local env template
+- `README.md`: backend-specific setup and API examples
+
+## Commands
+
+From the repo root:
+
+```bash
+bun run backend
+bun run doctor:local
+bun run verify:backend
+```
+
+From `server-python/` directly:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-```
-
-### Run
-```bash
-# Development (simple)
-python src/server.py
-
-# Development (auto-reload)
 uvicorn src.server:app --host 0.0.0.0 --port 8000 --reload
-
-# Production
-gunicorn src.server:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-### Test
-```bash
-# Test config generation
-curl http://localhost:8000/get_config
+## Working Rules
 
-# Test agent start
-curl -X POST http://localhost:8000/v2/startAgent \
-  -H "Content-Type: application/json" \
-  -d '{"channelName": "test", "rtcUid": "123", "userUid": "456"}'
-
-# Test agent stop
-curl -X POST http://localhost:8000/v2/stopAgent \
-  -H "Content-Type: application/json" \
-  -d '{"agentId": "agent_id"}'
-```
-
-## Code Style Guidelines
-
-### Python Conventions
-- **Style:** PEP 8
-- **Type hints:** Required for all function parameters and return values
-- **Imports:** Absolute imports preferred, group by standard/third-party/local
-- **Line length:** 100 characters max
-
-### Naming
-- Functions/variables: `snake_case`
-- Classes: `PascalCase`
-- Constants: `UPPER_SNAKE_CASE`
-- Private: prefix with `_`
-
-### Comments
-- Keep docstrings concise and natural
-- Avoid obvious comments
-- Focus on "why" not "what"
-
-## Security Considerations
-
-### Environment Variables
-- **Never commit** `.env.local` or actual API keys
-- Use `.env.example` as template only
-- All secrets must be loaded from environment
-
-### API Keys Required
-- `APP_ID`, `APP_CERTIFICATE` - Agora credentials (required)
-- `LLM_API_KEY` - LLM API key (required)
-- `TTS_ELEVENLABS_API_KEY` - ElevenLabs API key (required)
-- `ASR_DEEPGRAM_API_KEY` - Deepgram API key (required)
-
-## Project Structure
-
-```
-server-python/
-├── src/
-│   ├── server.py          # FastAPI app, HTTP endpoints
-│   └── agent.py           # Agent lifecycle management
-├── .env.example           # Environment template (safe to commit)
-├── .env.local             # Actual secrets (never commit)
-├── requirements.txt       # Python dependencies
-├── README.md              # User documentation
-└── AGENTS.md              # This file (AI assistant guide)
-```
-
-## Common Patterns
-
-### Agent Configuration Pattern
-```python
-from agora_agent import Agora, Area
-from agora_agent.agentkit import Agent as AgoraAgent
-from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI
-
-# Create Agora client (Token007 auth from APP_ID + APP_CERTIFICATE)
-client = Agora(area=Area.US, app_id=app_id, app_certificate=app_certificate)
-
-# Create agent with fluent API
-agora_agent = AgoraAgent(
-    name="agent_name",
-    instructions="System prompt",
-    greeting="Hello message",
-    advanced_features={"enable_rtm": True},
-    parameters={"data_channel": "rtm", "enable_error_message": True},
-)
-
-agora_agent = (
-    agora_agent
-    .with_llm(OpenAI(model="gpt-4o-mini"))
-    .with_tts(MiniMaxTTS(model="speech_2_6_turbo", voice_id="English_captivating_female1"))
-    .with_stt(DeepgramSTT(model="nova-3", language="en"))
-)
-
-session = agora_agent.create_session(
-    client=client,
-    channel=channel,
-    agent_uid=agent_uid,
-    remote_uids=[user_uid],     # Subscribe only the requester
-    enable_string_uid=True,
-    idle_timeout=30,
-    expires_in=3600,
-)
-agent_id = session.start()
-```
-
-### Error Handling Pattern
-```python
-try:
-    result = agent.some_method()
-    return {"code": 0, "msg": "success", "data": result}
-except ValueError as e:
-    raise HTTPException(status_code=400, detail=str(e))
-except RuntimeError as e:
-    raise HTTPException(status_code=500, detail=str(e))
-```
-
-### Token Generation
-```python
-from agora_agent.agentkit.token import generate_convo_ai_token
-
-token = generate_convo_ai_token(
-    app_id=app_id,
-    app_certificate=app_certificate,
-    channel_name=channel_name,
-    account=str(user_uid),
-    token_expire=86400,
-)
-```
-
-## Dependencies
-
-### Core
-- `fastapi>=0.100.0` - Web framework
-- `uvicorn>=0.20.0` - ASGI server
-- `agora-agent-server-sdk` - Agora Agent SDK
-- `python-dotenv>=1.0.0` - Environment management
-
-## Troubleshooting
-
-### Import Errors
-**Symptom:** `ModuleNotFoundError: No module named 'agora_agent'`
-**Solution:** Ensure `agora-agent-server-sdk` is installed: `pip install -r requirements.txt`
-
-### Configuration Errors
-**Symptom:** Service fails to start with ValueError
-**Solution:** Check `.env.local` exists and contains all required variables
-
-### Port Conflicts
-**Symptom:** `address already in use`
-**Solution:** Change `PORT` in `.env.local` or kill existing process with `lsof -ti :8000 | xargs kill -9`
+- Keep the FastAPI handlers async-friendly.
+- Keep token generation behavior aligned with the Next route handlers.
+- If you change the request or response contract, update the web client and root README in the same change.
+- If you change agent defaults, update both backend implementations or document the intended divergence clearly.

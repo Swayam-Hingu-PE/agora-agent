@@ -1,12 +1,21 @@
 'use client'
 
 import { getConfig, startAgent, stopAgent } from '@/services/api'
-import { type TranscriptItem, useAppStore } from '@/stores/app-store'
-import { AgoraVoiceAI, AgoraVoiceAIEvents } from 'agora-agent-client-toolkit'
-import type { AgentTranscription, TranscriptHelperItem, UserTranscription } from 'agora-agent-client-toolkit'
 import {
+  getCurrentInProgressMessage,
+  getMessageList,
+  mapAgentVisualizerState,
+  normalizeTranscript,
+} from '@/lib/conversation'
+import { AgoraVoiceAI, AgoraVoiceAIEvents, type AgentState } from 'agora-agent-client-toolkit'
+import type {
+  AgentTranscription,
+  TranscriptHelperItem,
+  UserTranscription,
+} from 'agora-agent-client-toolkit'
+import {
+  RemoteUser,
   useClientEvent,
-  useIsConnected,
   useJoin,
   useLocalMicrophoneTrack,
   usePublish,
@@ -14,7 +23,8 @@ import {
   useRemoteUsers,
 } from 'agora-rtc-react'
 import AgoraRTM, { type RTMClient } from 'agora-rtm'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { setParameter } from 'agora-rtc-sdk-ng/esm'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 interface ConnectionConfig {
   appId: string
@@ -26,30 +36,48 @@ interface ConnectionConfig {
 
 export function useAgoraConnection() {
   const client = useRTCClient()
-  const isRtcConnected = useIsConnected()
   const remoteUsers = useRemoteUsers()
 
   const [config, setConfig] = useState<ConnectionConfig | null>(null)
   const [shouldJoin, setShouldJoin] = useState(false)
-  const [micEnabled, setMicEnabled] = useState(true)
+  const [isReady, setIsReady] = useState(false)
+  const [isConnecting, setIsConnecting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isMicEnabled, setIsMicEnabled] = useState(true)
+  const [agentState, setAgentState] = useState<AgentState | null>(null)
+  const [rawTranscript, setRawTranscript] = useState<
+    TranscriptHelperItem<Partial<UserTranscription | AgentTranscription>>[]
+  >([])
+  const [connectionState, setConnectionState] = useState('DISCONNECTED')
+  const [agentId, setAgentId] = useState<string | null>(null)
 
-  const rtmClientRef = useRef<RTMClient | null>(null)
   const currentAgentIdRef = useRef<string | null>(null)
+  const rtmClientRef = useRef<RTMClient | null>(null)
   const voiceAIRef = useRef<AgoraVoiceAI | null>(null)
+  const initKeyRef = useRef<string | null>(null)
 
-  const addLog = useCallback((message: string, level: 'info' | 'success' | 'error' | 'warning' = 'info') => {
-    useAppStore.getState().addLog(message, level)
+  useEffect(() => {
+    let cancelled = false
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) setIsReady(true)
+    }, 0)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+      setIsReady(false)
+    }
   }, [])
 
-  // Local microphone track
-  const { localMicrophoneTrack } = useLocalMicrophoneTrack(micEnabled && shouldJoin, {
-    AEC: true,
-    ANS: false,
-    AGC: true,
-  })
+  useEffect(() => {
+    if (!client) return
 
-  // Join channel when config is ready
-  const { isConnected: joinSuccess } = useJoin(
+    try {
+      setParameter('ENABLE_AUDIO_PTS', true)
+    } catch {}
+  }, [client])
+
+  const { isConnected } = useJoin(
     config
       ? {
           appid: config.appId,
@@ -58,127 +86,26 @@ export function useAgoraConnection() {
           uid: config.uid,
         }
       : { appid: '', channel: '', token: null, uid: 0 },
-    shouldJoin && !!config,
+    isReady && shouldJoin && !!config,
   )
 
-  // Publish local track
+  const { localMicrophoneTrack } = useLocalMicrophoneTrack(isReady && shouldJoin)
+
   usePublish([localMicrophoneTrack])
 
-  // Handle remote user audio
   useClientEvent(client, 'user-published', async (user, mediaType) => {
-    if (mediaType === 'audio') {
-      await client.subscribe(user, mediaType)
-      user.audioTrack?.play()
-    }
+    if (mediaType !== 'audio') return
+    await client.subscribe(user, mediaType)
+    user.audioTrack?.play()
   })
 
-  useClientEvent(client, 'user-joined', (user) => {
-    addLog(`User joined: ${user.uid}`, 'info')
+  useClientEvent(client, 'connection-state-change', (currentState) => {
+    setConnectionState(currentState)
   })
 
-  useClientEvent(client, 'connection-state-change', (curState, _prevState, reason) => {
-    if (curState === 'CONNECTED') {
-      addLog('RTC connected successfully', 'success')
-    } else if (curState === 'DISCONNECTED') {
-      addLog(`RTC disconnected: ${reason || 'Unknown reason'}`, 'warning')
-    }
-  })
+  const cleanup = useCallback(async () => {
+    initKeyRef.current = null
 
-  // Initialize RTM + AgoraVoiceAI + Agent after RTC join success
-  useEffect(() => {
-    if (!joinSuccess || !config || !client) return
-
-    const initAll = async () => {
-      try {
-        // Initialize RTM
-        addLog('Initializing RTM Client...', 'info')
-        const rtmClient = new AgoraRTM.RTM(config.appId, String(config.uid))
-        rtmClientRef.current = rtmClient
-        addLog('RTM Client initialized successfully', 'success')
-
-        // RTM Login
-        addLog('Logging in to RTM...', 'info')
-        try {
-          await rtmClient.login({ token: config.token })
-          addLog('RTM login successful', 'success')
-        } catch (e: unknown) {
-          const error = e as { code?: number }
-          if (error.code === -10017) {
-            addLog('RTM already logged in', 'success')
-          } else throw e
-        }
-
-        // RTM Subscribe
-        addLog('Subscribing to RTM channel...', 'info')
-        await rtmClient.subscribe(config.channel)
-        addLog('Subscribed to RTM channel successfully', 'success')
-
-        // Initialize AgoraVoiceAI (imperative, no Provider needed)
-        addLog('Initializing ConvoAI API...', 'info')
-        const voiceAI = await AgoraVoiceAI.init({
-          rtcEngine: client as any,
-          rtmConfig: { rtmEngine: rtmClient },
-          enableLog: true,
-        })
-        voiceAIRef.current = voiceAI
-        setupVoiceAIEvents(voiceAI)
-        voiceAI.subscribeMessage(config.channel)
-        addLog('ConvoAI API initialized successfully', 'success')
-
-        // Start Agent
-        addLog('Starting agent...', 'info')
-        const agentId = await startAgent(config.channel, String(config.agentUid), String(config.uid))
-        currentAgentIdRef.current = agentId
-        useAppStore.getState().setAgentId(agentId)
-        addLog(`Agent started successfully (ID: ${agentId})`, 'success')
-
-        useAppStore.getState().setIsConnected(true)
-        useAppStore.getState().setIsConnecting(false)
-      } catch (error) {
-        const err = error as Error
-        addLog(`Connection failed: ${err.message}`, 'error')
-        useAppStore.getState().setIsConnecting(false)
-        await cleanup()
-      }
-    }
-
-    initAll()
-  }, [joinSuccess, config, client, addLog])
-
-  const setupVoiceAIEvents = (ai: AgoraVoiceAI) => {
-    ai.on(
-      AgoraVoiceAIEvents.TRANSCRIPT_UPDATED,
-      (chatHistory: TranscriptHelperItem<Partial<UserTranscription | AgentTranscription>>[]) => {
-        const transcripts: TranscriptItem[] = chatHistory
-          .sort((a, b) => {
-            if (a.turn_id !== b.turn_id) return a.turn_id - b.turn_id
-            return Number(a.uid) - Number(b.uid)
-          })
-          .map((item) => ({
-            id: `${item.turn_id}-${item.uid}-${item._time}`,
-            type: Number(item.uid) !== 0 ? 'agent' : 'user',
-            text: item.text || '',
-            status: item.status,
-            timestamp: item._time || Date.now(),
-          }))
-        useAppStore.getState().setTranscripts(transcripts)
-      },
-    )
-
-    ai.on(AgoraVoiceAIEvents.AGENT_STATE_CHANGED, (_agentUserId: string, event) => {
-      useAppStore.getState().setAgentState(event.state)
-    })
-
-    ai.on(AgoraVoiceAIEvents.AGENT_ERROR, (_agentUserId: string, error) => {
-      addLog(`Agent error: [${error.type}] ${error.message} (code: ${error.code})`, 'error')
-    })
-
-    ai.on(AgoraVoiceAIEvents.MESSAGE_ERROR, (_agentUserId: string, error) => {
-      addLog(`Message error: [${error.type}] ${error.message} (code: ${error.code})`, 'error')
-    })
-  }
-
-  const cleanup = async () => {
     if (voiceAIRef.current) {
       try {
         voiceAIRef.current.unsubscribe()
@@ -193,50 +120,113 @@ export function useAgoraConnection() {
       } catch {}
       rtmClientRef.current = null
     }
-  }
+  }, [])
 
-  const connect = useCallback(async () => {
-    const storeState = useAppStore.getState()
-    storeState.setIsConnecting(true)
-    storeState.clearLogs()
+  useEffect(() => {
+    if (!isReady || !isConnected || !config || !client) return
+
+    const initKey = `${config.channel}:${config.uid}`
+    if (initKeyRef.current === initKey) return
+    initKeyRef.current = initKey
+
+    let cancelled = false
+
+    const initializeSession = async () => {
+      try {
+        const rtmClient = new AgoraRTM.RTM(config.appId, String(config.uid))
+        await rtmClient.login({ token: config.token })
+        await rtmClient.subscribe(config.channel)
+        rtmClientRef.current = rtmClient
+
+        const voiceAI = await AgoraVoiceAI.init({
+          rtcEngine: client,
+          rtmConfig: { rtmEngine: rtmClient },
+          enableLog: true,
+        })
+
+        if (cancelled) {
+          voiceAI.unsubscribe()
+          voiceAI.destroy()
+          return
+        }
+
+        voiceAI.on(AgoraVoiceAIEvents.TRANSCRIPT_UPDATED, (transcript) => {
+          setRawTranscript([...transcript])
+        })
+        voiceAI.on(AgoraVoiceAIEvents.AGENT_STATE_CHANGED, (_agentUserId, event) => {
+          setAgentState(event.state)
+        })
+        voiceAI.subscribeMessage(config.channel)
+        voiceAIRef.current = voiceAI
+
+        const nextAgentId = await startAgent(config.channel, config.agentUid, config.uid)
+        currentAgentIdRef.current = nextAgentId
+        setAgentId(nextAgentId)
+        setError(null)
+      } catch (nextError) {
+        initKeyRef.current = null
+        setError(nextError instanceof Error ? nextError.message : 'Failed to start conversation')
+        setShouldJoin(false)
+        await cleanup()
+      } finally {
+        setIsConnecting(false)
+      }
+    }
+
+    initializeSession()
+
+    return () => {
+      cancelled = true
+    }
+  }, [cleanup, client, config, isConnected, isReady])
+
+  const renewAgoraTokens = useCallback(async () => {
+    if (!config || !client) return
 
     try {
-      addLog('Getting configuration...', 'info')
-      const configData = await getConfig()
+      const rtcConfig = await getConfig({ channel: config.channel, uid: String(config.uid) })
+      const rtmConfig = await getConfig({ channel: config.channel, uid: '0' })
+      await client.renewToken(rtcConfig.token)
+      await rtmClientRef.current?.renewToken(rtmConfig.token)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to renew Agora token')
+    }
+  }, [client, config])
 
-      const connectionConfig: ConnectionConfig = {
+  useClientEvent(client, 'token-privilege-will-expire', renewAgoraTokens)
+
+  const connect = useCallback(async () => {
+    setIsConnecting(true)
+    setError(null)
+    setAgentState(null)
+    setRawTranscript([])
+    setAgentId(null)
+    currentAgentIdRef.current = null
+    setIsMicEnabled(true)
+
+    try {
+      const configData = await getConfig()
+      setConfig({
         appId: configData.app_id,
         channel: configData.channel_name,
         token: configData.token,
         uid: Number(configData.uid),
         agentUid: Number(configData.agent_uid),
-      }
-
-      storeState.setChannelName(connectionConfig.channel)
-      addLog('Configuration retrieved successfully', 'success')
-
-      addLog('Initializing RTC Engine...', 'info')
-      setConfig(connectionConfig)
+      })
       setShouldJoin(true)
-      setMicEnabled(true)
-      addLog('RTC Engine initialized successfully', 'success')
-      addLog('Joining RTC channel...', 'info')
-    } catch (error) {
-      const err = error as Error
-      addLog(`Failed to get config: ${err.message}`, 'error')
-      storeState.setIsConnecting(false)
+    } catch (nextError) {
+      setIsConnecting(false)
+      setError(nextError instanceof Error ? nextError.message : 'Failed to initialize conversation')
     }
-  }, [addLog])
+  }, [])
 
   const disconnect = useCallback(async () => {
-    if (currentAgentIdRef.current && config?.channel) {
+    setIsConnecting(false)
+
+    if (currentAgentIdRef.current) {
       try {
-        await stopAgent(config.channel, currentAgentIdRef.current)
-        addLog('Agent stopped', 'success')
-      } catch (e) {
-        const err = e as Error
-        addLog(`Failed to stop agent: ${err.message}`, 'error')
-      }
+        await stopAgent(currentAgentIdRef.current)
+      } catch {}
       currentAgentIdRef.current = null
     }
 
@@ -249,27 +239,67 @@ export function useAgoraConnection() {
 
     setShouldJoin(false)
     setConfig(null)
+    setRawTranscript([])
+    setAgentState(null)
+    setAgentId(null)
+    setError(null)
+    setConnectionState('DISCONNECTED')
+  }, [cleanup, localMicrophoneTrack])
 
-    useAppStore.getState().reset()
-    addLog('Disconnected', 'info')
-  }, [config, localMicrophoneTrack, addLog])
-
-  const toggleMicrophone = useCallback(() => {
-    const storeState = useAppStore.getState()
-    const newMuted = !storeState.isMicMuted
-
-    if (localMicrophoneTrack) {
-      localMicrophoneTrack.setMuted(newMuted)
+  const toggleMicrophone = useCallback(async () => {
+    const nextEnabled = !isMicEnabled
+    if (!localMicrophoneTrack) {
+      setIsMicEnabled(nextEnabled)
+      return
     }
-    storeState.setIsMicMuted(newMuted)
-    addLog(newMuted ? 'Microphone muted' : 'Microphone unmuted', 'info')
-  }, [localMicrophoneTrack, addLog])
+
+    try {
+      await localMicrophoneTrack.setEnabled(nextEnabled)
+      setIsMicEnabled(nextEnabled)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to update microphone state')
+    }
+  }, [isMicEnabled, localMicrophoneTrack])
+
+  const normalizedTranscript = useMemo(() => {
+    if (!config || client.uid == null) return []
+    return normalizeTranscript(rawTranscript, String(client.uid))
+  }, [client.uid, config, rawTranscript])
+
+  const messageList = useMemo(() => getMessageList(normalizedTranscript), [normalizedTranscript])
+  const currentInProgressMessage = useMemo(
+    () => getCurrentInProgressMessage(normalizedTranscript),
+    [normalizedTranscript],
+  )
+
+  const isAgentConnected = useMemo(() => {
+    if (!config) return false
+    return remoteUsers.some((user) => String(user.uid) === String(config.agentUid))
+  }, [config, remoteUsers])
+
+  const visualizerState = useMemo(
+    () => mapAgentVisualizerState(agentState, isAgentConnected, connectionState),
+    [agentState, connectionState, isAgentConnected],
+  )
 
   return {
+    RemoteUser,
+    agentId,
+    agentUid: config ? String(config.agentUid) : null,
+    channelName: config?.channel ?? '',
     connect,
+    currentInProgressMessage,
     disconnect,
-    toggleMicrophone,
-    isConnected: isRtcConnected,
+    error,
+    isAgentConnected,
+    isConnected,
+    isConnecting,
+    isMicEnabled,
+    localMicrophoneTrack,
+    messageList,
     remoteUsers,
+    setMicEnabled: setIsMicEnabled,
+    toggleMicrophone,
+    visualizerState,
   }
 }
