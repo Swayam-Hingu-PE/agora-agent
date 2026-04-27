@@ -3,6 +3,7 @@ Agent
 
 High-level API for managing Agora Conversational AI Agents.
 """
+import logging
 import os
 import time
 from typing import Any, Dict
@@ -10,6 +11,8 @@ from typing import Any, Dict
 from agora_agent import Area, AsyncAgora
 from agora_agent.agentkit import Agent as AgoraAgent
 from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI
+
+logger = logging.getLogger("uvicorn.error")
 
 ADA_PROMPT = """You are Ada, an agentic developer advocate from Agora. You help developers understand and build with Agora's Conversational AI platform.
 
@@ -51,7 +54,7 @@ class Agent:
         self,
         channel_name: str,
         agent_uid: int,
-        user_uid: int
+        user_uid: int,
     ) -> Dict[str, Any]:
         """Start agent with the same default vendor chain as the Next.js quickstart."""
         if not channel_name or not str(channel_name).strip():
@@ -134,7 +137,7 @@ class Agent:
             .with_stt(stt)
         )
 
-        session = agora_agent.create_session(
+        session = agora_agent.create_async_session(
             client=self.client,
             channel=channel_name,
             agent_uid=str(agent_uid),
@@ -144,10 +147,34 @@ class Agent:
             expires_in=3600,
         )
 
-        agent_id = await session.start()
+        logger.info(
+            "Starting Agora agent channel=%s agent_uid=%s user_uid=%s",
+            channel_name,
+            agent_uid,
+            user_uid,
+        )
+
+        try:
+            agent_id = await session.start()
+        except Exception:
+            logger.exception(
+                "Failed to start Agora agent channel=%s agent_uid=%s user_uid=%s",
+                channel_name,
+                agent_uid,
+                user_uid,
+            )
+            raise
 
         # Save session for later stop
         self._sessions[agent_id] = session
+
+        logger.info(
+            "Started Agora agent agent_id=%s channel=%s agent_uid=%s user_uid=%s",
+            agent_id,
+            channel_name,
+            agent_uid,
+            user_uid,
+        )
         
         return {
             "agent_id": agent_id,
@@ -164,9 +191,15 @@ class Agent:
         if session:
             try:
                 await session.stop()
+                logger.info("Stopped Agora agent from active session agent_id=%s", agent_id)
                 return
             except Exception:
                 # Fall back to the stateless SDK path if the in-memory session is stale.
-                pass
+                logger.warning(
+                    "Failed to stop Agora agent from active session; falling back to client.stop_agent agent_id=%s",
+                    agent_id,
+                    exc_info=True,
+                )
 
+        logger.info("Stopping Agora agent through client.stop_agent agent_id=%s", agent_id)
         await self.client.stop_agent(agent_id)
