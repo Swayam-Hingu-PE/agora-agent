@@ -9,27 +9,31 @@ import time
 from typing import Any, Dict, Optional
 
 from agora_agent import Area, AsyncAgora
-from agora_agent.agentkit import Agent as AgoraAgent
-from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI
+from agora_agent.agentkit import Agent as AgoraAgent, AdvancedFeatures,TurnDetectionConfig,McpServersItem
+from agora_agent.agentkit.vendors import DeepgramSTT, OpenAISTT, OpenAITTS, ElevenLabsTTS, OpenAI
+from dotenv import load_dotenv
+load_dotenv()
 
 logger = logging.getLogger("uvicorn.error")
 
-ADA_PROMPT = """You are Ada, an agentic developer advocate from Agora. You help developers understand and build with Agora's Conversational AI platform.
+# ADA_PROMPT = """You are Ada, an agentic developer advocate from Agora. You help developers understand and build with Agora's Conversational AI platform.
+# Agora is a real-time communications company. The product you represent is the Agora Conversational AI Engine.
+# If you do not know a specific fact about Agora, say so plainly and suggest checking docs.agora.io. Keep most replies to one or two sentences unless the user explicitly asks for more detail.
+# """
 
-Agora is a real-time communications company. The product you represent is the Agora Conversational AI Engine.
-
-If you do not know a specific fact about Agora, say so plainly and suggest checking docs.agora.io. Keep most replies to one or two sentences unless the user explicitly asks for more detail.
+ADA_PROMPT = """
+You are personal assistant, and you have to task accordingly what use ask you to do 
 """
 
 
 class Agent:
     """
     High-level wrapper for Agora Conversational AI Agent operations.
-    
+
     Uses AgentSession for full lifecycle management (start/stop),
     which handles Token007 authentication automatically.
     """
-    
+
     def __init__(self):
         self.app_id = os.getenv("AGORA_APP_ID")
         self.app_certificate = os.getenv("AGORA_APP_CERTIFICATE")
@@ -67,43 +71,36 @@ class Agent:
 
         name = f"agent_{channel_name}_{agent_uid}_{int(time.time())}"
 
-        # Default managed path: DeepgramSTT + OpenAI + MiniMaxTTS.
+        stt = DeepgramSTT(api_key=os.getenv("DEEPGRAM_API_KEY"), model="nova-3", language="en")
+
         llm = OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
             model="gpt-4o-mini",
-            greeting_message=self.greeting,
-            failure_message="Please wait a moment.",
+            greeting_message="Hello! I am your AI assistant. How can I help you?",
+            failure_message="I'm sorry, I'm having trouble processing your request.",
             max_history=15,
             max_tokens=1024,
             temperature=0.7,
             top_p=0.95,
+            #mcp_servers=mcp_server_config
+            mcp_servers=[
+                {
+                    "name": "AgoraMCPTest",
+                    "endpoint": os.getenv("MCP_ENDPOINT"),
+                    "transport":"sse",
+                    "allowed_tools":None,
+                    "timeout_ms": 20000,
+                }
+            ]
         )
-        stt = DeepgramSTT(model="nova-3", language="en")
-        tts = MiniMaxTTS(model="speech_2_6_turbo", voice_id="English_captivating_female1")
 
-        # Optional BYOK example: replace the STT block above and set DEEPGRAM_API_KEY.
-        # stt = DeepgramSTT(api_key=os.getenv("DEEPGRAM_API_KEY"), model="nova-3", language="en")
+        tts = ElevenLabsTTS(
+            key=os.getenv("ELEVENLABS_API_KEY"),
+            model_id="eleven_flash_v2_5",
+            voice_id=os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB"),
+        )
 
-        # Optional BYOK example: replace the LLM block above and set OPENAI_API_KEY.
-        # llm = OpenAI(
-        #     api_key=os.getenv("OPENAI_API_KEY"),
-        #     model="gpt-4o-mini",
-        #     greeting_message="Hello! I am your AI assistant. How can I help you?",
-        #     failure_message="I'm sorry, I'm having trouble processing your request.",
-        #     max_history=15,
-        #     max_tokens=1024,
-        #     temperature=0.7,
-        #     top_p=0.95,
-        # )
-
-        # Optional BYOK example: replace the TTS block above and set ELEVENLABS_API_KEY.
-        # from agora_agent.agentkit.vendors import ElevenLabsTTS
-        # tts = ElevenLabsTTS(
-        #     key=os.getenv("ELEVENLABS_API_KEY"),
-        #     model_id="eleven_flash_v2_5",
-        #     voice_id=os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB"),
-        # )
-
-        parameters = {"data_channel": "rtm", "enable_error_message": True}
+        parameters = {"data_channel":"rtm", "enable_error_message": True}
         if isinstance(output_audio_codec, str) and output_audio_codec.strip():
             parameters["output_audio_codec"] = output_audio_codec.strip()
 
@@ -113,28 +110,12 @@ class Agent:
             greeting=self.greeting,
             failure_message="Please wait a moment.",
             max_history=50,
-            turn_detection={
-                "config": {
-                    "speech_threshold": 0.5,
-                    "start_of_speech": {
-                        "mode": "vad",
-                        "vad_config": {
-                            "interrupt_duration_ms": 160,
-                            "prefix_padding_ms": 300,
-                        },
-                    },
-                    "end_of_speech": {
-                        "mode": "vad",
-                        "vad_config": {
-                            "silence_duration_ms": 480,
-                        },
-                    },
-                },
-            },
-            advanced_features={"enable_rtm": True, "enable_tools": True},
-            parameters=parameters,
+            advanced_features=AdvancedFeatures(
+                enable_rtm=True,
+                enable_tools=True,
+            )
         )
-        
+
         agora_agent = (
             agora_agent
             .with_llm(llm)
@@ -180,7 +161,7 @@ class Agent:
             agent_uid,
             user_uid,
         )
-        
+
         return {
             "agent_id": agent_id,
             "channel_name": channel_name,
