@@ -23,7 +23,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agora_agent.agentkit.token import generate_convo_ai_token
-from agent import Agent
+from .agent import Agent
 
 logger = logging.getLogger("uvicorn.error")
 
